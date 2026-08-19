@@ -14,7 +14,7 @@ This project builds a "pluralism direction" from real human ratings in PRISM, ad
 
 Six models under 3B parameters, two families at three sizes each: SmolLM2 135M/360M/1.7B and Qwen2.5 0.5B/1.5B/3B. Three demographic axes: origin (Western vs non-Western), religion (religious vs secular), and age (younger vs older generations). Four vector-estimation methods plus a random control.
 
-## How to run this (This could help anyone who is unable to)
+## How to run this yourself
 
 Everything runs in Google Colab. Open `MIORPA_Colab_FullSet.ipynb` in Colab and Run All.
 
