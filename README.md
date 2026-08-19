@@ -3,7 +3,8 @@
 Getting small language models to give answers that hold more than one cultural viewpoint, by adding a vector to their internal activations while they generate. No retraining, no longer prompts.
 
 MIORPA 2026 — Mathematical Institute Research Program with Africa, University of Oxford.
-Blessing Ngozi Uzor. Supervisor: Simona Frenda, PhD, Heriot-Watt University.
+Blessing Ngozi Uzor. 
+Supervisor: Simona Frenda, PhD, Heriot-Watt University.
 
 ## What this does
 
