@@ -1,0 +1,1057 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pluralistic Activation Steering for Small Language Models</title>
+<meta name="description" content="Steering strength in small language models is set by the push as a share of the hidden state, not by the multiplier. MIORPA 2026.">
+<meta name="author" content="Blessing Ngozi Uzor, Simona Frenda">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ngozi-uzor.github.io/Activation-Steering-MIORPA-/">
+<meta property="og:title" content="Pluralistic Activation Steering for Small Language Models">
+<meta property="og:description" content="Steering strength in small language models is set by the push as a share of the hidden state, not by the multiplier. MIORPA 2026.">
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20fill%3D%27%2316181B%27%2F%3E%3Crect%20x%3D%276%27%20y%3D%278%27%20%20width%3D%279%27%20%20height%3D%274%27%20fill%3D%27%23DDDFE2%27%2F%3E%3Crect%20x%3D%276%27%20y%3D%2714%27%20width%3D%2714%27%20height%3D%274%27%20fill%3D%27%238B9198%27%2F%3E%3Crect%20x%3D%276%27%20y%3D%2720%27%20width%3D%2720%27%20height%3D%274%27%20fill%3D%27%23D8611A%27%2F%3E%3C%2Fsvg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  /* The artifact host normally supplies this; a static host does not. */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg, video { max-width: 100%; }
+</style>
+
+<style>
+  :root {
+    --paper:  #FFFFFF;
+    --pale:   #F4F5F6;
+    --dark:   #16181B;
+    --dark-2: #22262A;
+    --ink:    #16181B;
+    --muted:  #5C6268;
+    --faint:  #8B9198;
+    --rule:   #D9DCDF;
+    --orange: #C2540B;
+    --cite:   #B54E08;
+    --on-dark: #F3F4F5;
+
+    --push-lo:  #DDDFE2;
+    --push-mid: #555B61;
+    --push-hi:  #D8611A;
+    --on-lo:    #16181B;
+    --on-mid:   #FFFFFF;
+    --on-hi:    #16181B;
+
+    --measure: 44rem;
+    --wide: 64rem;
+  }
+
+  /* The page prints on white in every viewing context. It is a paper, not an
+     interface, and the dark bands at the masthead and footer are part of the
+     design rather than a theme, so there is no second palette to switch to.
+     Every colour above is therefore stated once and holds everywhere. */
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 1.0625rem;
+    line-height: 1.68;
+    margin: 0; padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .col  { max-width: var(--measure); margin-inline: auto; }
+  .wide { max-width: var(--wide);    margin-inline: auto; }
+
+  .sans { font-family: "Source Sans 3", system-ui, sans-serif; }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    background: var(--dark); color: var(--on-dark);
+    text-align: center; padding: 4.5rem 1.5rem 3.25rem;
+    border-bottom: 4px solid var(--orange);
+  }
+  .venue {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--orange); font-weight: 500; margin: 0 0 1.5rem;
+  }
+  .masthead h1 {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: clamp(1.85rem, 4.3vw, 2.7rem); font-weight: 700;
+    line-height: 1.16; letter-spacing: -0.012em; text-wrap: balance;
+    margin: 0 auto; max-width: 24ch;
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    font-size: 0.78rem; font-weight: 500;
+    color: var(--on-dark);
+    border: 1px solid rgba(255,255,255,0.28);
+    padding: 0.3rem 0.85rem; border-radius: 999px;
+    margin: -0.7rem 0 1.9rem;
+  }
+  .status .dot {
+    width: 0.42rem; height: 0.42rem; border-radius: 50%;
+    background: var(--orange); flex: none;
+  }
+
+  .authors { margin: 1.9rem 0 0; font-size: 1.0625rem; }
+  .authors sup, .affil sup { color: var(--orange); font-size: 0.72em; }
+  .affil {
+    margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.7;
+    font-family: "Source Sans 3", system-ui, sans-serif;
+  }
+
+  .buttons { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 2rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    background: var(--orange); color: #FFFFFF;
+    text-decoration: none; font-size: 0.9rem; font-weight: 600;
+    padding: 0.55rem 1.2rem; transition: opacity 0.15s ease;
+  }
+  .btn:hover { opacity: 0.86; }
+  .btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+  .btn.ghost { background: transparent; color: var(--on-dark); border: 1px solid rgba(255,255,255,0.3); }
+  .btn svg { width: 0.95rem; height: 0.95rem; fill: currentColor; }
+
+  /* ---------- abstract ---------- */
+  .abstract {
+    background: var(--pale); padding: 3rem 1.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .abstract h2 {
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase;
+    font-weight: 700; text-align: center; color: var(--muted);
+    margin: 0 0 1.4rem;
+  }
+  .abstract p { text-align: justify; hyphens: auto; margin: 0; font-size: 1.0125rem; }
+
+  /* ---------- sections ---------- */
+  section { padding: 3.25rem 1.5rem; }
+  section.pale { background: var(--pale); }
+
+  h2.head {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 1.5rem; font-weight: 700; letter-spacing: -0.008em;
+    margin: 0 0 1.4rem; text-wrap: balance;
+  }
+  h2.head .n {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.82em; font-weight: 500; color: var(--orange); margin-right: 0.65rem;
+  }
+  h3.sub {
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 1.125rem; font-weight: 700; margin: 2.4rem 0 0.9rem;
+  }
+  h3.sub .n {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.8em; font-weight: 500; color: var(--orange); margin-right: 0.55rem;
+  }
+
+  p { margin: 0.95rem 0 0; text-align: justify; hyphens: auto; }
+  p:first-of-type { margin-top: 0; }
+  em { font-style: italic; }
+  strong { font-weight: 700; }
+
+  /* citations, in the manner of an ACL paper */
+  .cite { color: var(--cite); }
+  a.cite { text-decoration: none; }
+  a.cite:hover { text-decoration: underline; }
+
+  .lead { font-weight: 700; }
+
+  /* ---------- figure ----------
+     Figures sit on a white card so they keep their own ground where a section
+     is tinted, and so a plot never has to compete with the page behind it. */
+  figure {
+    margin: 2.25rem 0 0;
+    background: var(--paper);
+    padding: 1.6rem 1.6rem 1.25rem;
+    border: 1px solid var(--rule);
+  }
+  figure.wide { max-width: var(--wide); margin-inline: auto; }
+  figure svg { display: block; }
+  .bands { display: flex; flex-direction: column; gap: 0.5rem; }
+  .band-row { display: grid; grid-template-columns: 5.25rem 1fr; align-items: center; gap: 0.9rem; }
+  .band-label {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.78rem; color: var(--muted); text-align: right;
+  }
+  .track { position: relative; height: 2.15rem; background: var(--paper); border: 1px solid var(--rule); }
+  section.pale .track { background: var(--paper); }
+  .band {
+    position: absolute; top: -1px; bottom: -1px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem; font-weight: 500; white-space: nowrap;
+  }
+  .band.lo  { background: var(--push-lo);  color: var(--on-lo); }
+  .band.mid { background: var(--push-mid); color: var(--on-mid); }
+  .band.hi  { background: var(--push-hi);  color: var(--on-hi); }
+  .axis { display: grid; grid-template-columns: 5.25rem 1fr; gap: 0.9rem; margin-top: 0.5rem; }
+  .ticks {
+    display: flex; justify-content: space-between;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem; color: var(--faint);
+  }
+
+  figcaption, caption {
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    font-size: 0.84rem; line-height: 1.55; color: var(--muted);
+    text-align: left; margin-top: 1rem;
+  }
+  figcaption .lbl, caption .lbl { font-weight: 700; color: var(--ink); }
+
+  /* ---------- tables ----------
+     Tables share the figures' white card, with booktabs-style rules: a heavy line
+     above and below the table, a light one under the column heads, and nothing
+     at all between the rows. */
+  .scroll {
+    overflow-x: auto; margin-top: 2.25rem;
+    background: var(--paper);
+    padding: 1.5rem 1.6rem 1.25rem;
+    border: 1px solid var(--rule);
+  }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    font-size: 0.875rem; font-variant-numeric: tabular-nums;
+  }
+  caption { caption-side: bottom; }
+  th, td { text-align: right; padding: 0.42rem 0.7rem; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-weight: 600; font-size: 0.68rem; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  thead tr:first-child th { border-top: 1.5px solid var(--ink); padding-top: 0.6rem; }
+  thead tr:last-child th { border-bottom: 1px solid var(--ink); padding-bottom: 0.5rem; }
+  tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+  td.num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.82rem; }
+  .up   { color: var(--orange); font-weight: 600; }
+  .dim  { color: var(--faint); }
+  .ci   { color: var(--faint); font-size: 0.88em; }
+
+  /* ---------- callout ---------- */
+  .callout {
+    margin-top: 1.9rem; padding: 1.15rem 1.4rem;
+    background: var(--paper); border-left: 4px solid var(--orange);
+    font-size: 0.99rem;
+  }
+  section.pale .callout { background: var(--paper); }
+
+  /* ---------- limitations ---------- */
+  .lims { margin-top: 1.2rem; }
+  .lims p { margin-top: 1.15rem; }
+
+  a { color: var(--orange); }
+  a:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+
+  footer {
+    padding: 2.5rem 1.5rem 3.5rem; background: var(--dark); color: var(--on-dark);
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    font-size: 0.84rem; line-height: 1.6; text-align: center;
+  }
+  footer .col { opacity: 0.7; }
+
+  @media (max-width: 34rem) {
+    .band-row, .axis { grid-template-columns: 3.5rem 1fr; }
+    p, .abstract p { text-align: left; }
+  }
+</style>
+</head>
+<body>
+<div class="masthead">
+  <div class="wide">
+    <p class="venue">MIORPA 2026 · Research Program with Africa</p>
+    <p class="status"><span class="dot" aria-hidden="true"></span>Ongoing project · not yet peer reviewed</p>
+    <h1>Pluralistic Activation Steering for Small Language Models</h1>
+    <p class="authors">Blessing Ngozi Uzor<sup>1</sup>, Simona Frenda<sup>2</sup></p>
+    <p class="affil">
+      <sup>1</sup>African Institute for Mathematical Sciences, Cameroon
+      &nbsp;&nbsp;<sup>2</sup>Heriot-Watt University, Edinburgh
+    </p>
+    <div class="buttons">
+      <a class="btn" href="https://github.com/Ngozi-uzor/Activation-Steering-MIORPA-">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        Code
+      </a>
+      <a class="btn ghost" href="https://huggingface.co/datasets/HannahRoseKirk/prism-alignment">PRISM, calibration</a>
+      <a class="btn ghost" href="https://huggingface.co/datasets/Anthropic/llm_global_opinions">GlobalOpinionQA, evaluation</a>
+    </div>
+  </div>
+</div>
+
+<div class="abstract">
+  <div class="col">
+    <h2>Abstract</h2>
+    <p>
+      We study whether activation steering can make small language models produce answers that hold
+      more than one cultural viewpoint. We build a pluralism direction from contrastive human ratings
+      in the PRISM alignment dataset and apply it to six models under 3B parameters across three
+      demographic axes, evaluating 21,600 generations with two independent LLM judges over 71,800
+      pairwise comparisons. We observe that steering strength is not set by the multiplier alone: it
+      is the product of that multiplier and a vector whose length varies with the model. Measured as
+      a share of the hidden state it is added to, the intervention occupies three non-overlapping
+      bands, roughly 12% for origin, 25% for age and 59% for religion, and these bands hold across
+      two model families and a 23-fold spread in representation scale. We show that no single
+      multiplier can place the three axes in a comparable regime, and that at the strength inherited
+      from prior work every axis on every model is over-steered. Across eighteen paired comparisons,
+      lowering the push improves the judged outcome in twelve of thirteen cases. Religion, which
+      reads as a dead axis under a shared setting, recovers once the intervention stops overwriting
+      the representation. We argue that null results reported from shared-strength multi-axis
+      comparisons are unsafe.
+    </p>
+  </div>
+</div>
+
+<section>
+  <div class="col">
+    <h2 class="head"><span class="n">1</span>Introduction</h2>
+    <p>
+      Language models trained mostly on feedback from Western, English-speaking users tend to answer
+      questions about religion, family or economic values from one cultural position, as though it
+      were the neutral one <span class="cite">(Wang et al., 2024; AlKhamissi et al., 2024)</span>.
+      This is not a factual error. It is a bias in whose values shaped the model, and it affects
+      everyone who does not share that position.
+    </p>
+    <p>
+      The two obvious remedies do not suit settings where compute is scarce. Fine-tuning retrains the
+      weights and must be repeated for every culture. Retrieval lengthens every prompt, which costs
+      memory and latency and is impractical on small or offline devices. Both scale badly once there
+      are many demographic groups and a small budget, which is exactly the setting in which this
+      problem matters most.
+    </p>
+    <p>
+      Activation steering offers a third route. A model carries an internal state at every layer
+      while it generates. If a direction in that state corresponds to a concept, adding it back
+      during generation changes the output without retraining and without longer prompts
+      <span class="cite">(Turner et al., 2024)</span>. We follow
+      <span class="cite">Im and Li (2026)</span>, who unify four steering-vector estimators and
+      evaluate them on Llama-2-7b-chat, and we ask whether their approach transfers to models an
+      order of magnitude smaller.
+    </p>
+    <p>
+      We are not attempting persona imitation. Prompting a model to answer as an elderly religious
+      person tends to produce stereotypes rather than perspectives, and replaces one bias with
+      another <span class="cite">(Jiang et al., 2023; Kwok et al., 2024)</span>. What we want instead
+      is a single answer that genuinely holds several viewpoints at once, which is the framing used
+      in the steerable-pluralism literature <span class="cite">(Adams et al., 2025; Castricato et
+      al., 2025)</span>.
+    </p>
+    <p>
+      <span class="lead">Our question.</span> Can activation steering make small language models
+      produce answers that hold more than one cultural viewpoint, and does it work well enough to
+      matter on models under 3B parameters? We decompose this into three parts. First, does steering
+      toward pluralism beat a matched random perturbation, and does it beat leaving the model alone?
+      Second, do the three demographic axes respond differently to the same steering strength, and if
+      so, what explains the difference? Third, if the axes are not receiving comparable
+      interventions, does correcting for that change the outcome?
+    </p>
+    <p>
+      We report a result we did not anticipate. The axes are not comparable at a shared multiplier,
+      the difference is systematic and measurable, and the axis that appears unsteerable is being
+      overwritten rather than failing to respond. We believe this affects how null results in this
+      literature should be read.
+    </p>
+  </div>
+</section>
+
+<section class="pale">
+  <div class="col">
+    <h2 class="head"><span class="n">2</span>Method</h2>
+    <p>
+      <span class="lead">Scope of this study</span> is limited to inference-time activation steering
+      on instruction-tuned models below 3B parameters. We do not evaluate fine-tuning or retrieval
+      baselines, and all generation and judging is in English.
+    </p>
+
+    <h3 class="sub"><span class="n">2.1</span>Calibration data</h3>
+    <p>
+      We draw contrastive pairs from PRISM <span class="cite">(Kirk et al., 2024)</span>, which
+      records over 68,000 ratings from more than 1,500 participants across 75 countries, each tied to
+      the demographic profile of the person who gave it. That linkage is what makes the axes
+      possible; most preference datasets discard it.
+    </p>
+    <p>
+      We define a response as <em>balanced</em> when both poles of an axis rated a similar question
+      highly, and <em>one-sided</em> when only one pole did. We match questions on exact text first
+      and then on TF-IDF cosine similarity at 0.75 or above, which is what makes a thin axis usable
+      at all. The difference between the pooled activations of the two sets is what we take as the
+      pluralism direction. This yields 122 pairs on origin, 155 on religion and 166 on age.
+    </p>
+    <p>
+      We use three axes. <span class="lead">Origin</span> splits Western from non-Western by region
+      of residence; we abandoned an earlier Global North against Global South split because that
+      framing is economic and would have classified Mexico and Chile as non-Western despite their
+      Hispanic-European cultural inheritance. <span class="lead">Religion</span> splits religious
+      from secular by self-reported affiliation, though we note the religious group is 87% Christian.
+      <span class="lead">Age</span> splits younger from older by generation rather than raw bracket,
+      which nearly tripled the usable sample.
+    </p>
+
+    <h3 class="sub"><span class="n">2.2</span>Models and conditions</h3>
+    <p>
+      We evaluate six models spanning two families and three sizes each: SmolLM2 at 135M, 360M and
+      1.7B, and Qwen2.5 at 0.5B, 1.5B and 3B. We reproduce all four estimators from
+      <span class="cite">Im and Li (2026)</span>: mean of differences, the first principal component
+      of the difference vectors, the first principal component of the pooled activations, and the
+      normal of a linear classifier separating the two sets. To each we add a random control of
+      matched magnitude, which is what separates a real effect from mere perturbation.
+    </p>
+    <p>
+      The steering hook adds the scaled direction to the residual stream at one layer. We apply it
+      only to generated tokens and never to the prompt, since steering the prompt distorts how the
+      question is read rather than shifting the answer. Within an axis we rescale the three
+      alternative estimators to the mean-of-differences norm so that one multiplier means the same
+      push across methods. <em>We did not equalise across axes, and that omission turns out to be the
+      central finding of this work.</em>
+    </p>
+
+    <h3 class="sub"><span class="n">2.3</span>Evaluation</h3>
+    <p>
+      Our test questions are separate from the data the vectors are built on. We draw 200 questions
+      per axis from GlobalOpinionQA <span class="cite">(Durmus et al., 2024)</span>, which collects
+      items from the World Values Survey and the Pew Global Attitudes survey. These are questions
+      that already divide along the lines we steer on, and no model sees them during calibration.
+    </p>
+    <p>
+      We score relevance and fluency automatically, but neither measure can see pluralism. That
+      requires a judge, so we compare every steered answer against its own unsteered baseline using
+      two LLM judges: Mistral-Small-24B-Instruct and Prometheus-7B-v2.0. Neither is drawn from a
+      family under test, which matters because three of our six models are Qwen and judges score
+      their own family's outputs higher. We ruled out GPT-4 for a related reason: we did not want a
+      Western-built judge adjudicating Western against non-Western fairness.
+    </p>
+    <p>
+      Judging is pairwise rather than absolute. We show every pair in both presentation orders and
+      count a win only when the judge said so both times. Everything else resolves to a tie, which is
+      deliberately conservative: it absorbs position bias rather than mistaking it for preference. We
+      test each method against its own random control by resampling the difference in win rate 20,000
+      times at a 95% interval. Ties take 48.8% of our pairs overall and run from 5.5% to 87.5%
+      depending on the condition, so we report every rate with its decided-pair count.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wide">
+    <div class="col">
+      <h2 class="head"><span class="n">3</span>Findings</h2>
+
+      <h3 class="sub"><span class="n">3.1</span>Steering beats noise more often than it beats doing nothing</h3>
+      <p>
+        Every arm, the random control included, was judged against the same unsteered baseline, so a
+        method clears the control when its win rate over that baseline sits significantly above the
+        control's. Twenty-five of seventy-two model-axis-method conditions clear it on Mistral and
+        twenty-six on Prometheus. Only four and five respectively clear the unsteered baseline
+        itself.
+      </p>
+      <p>
+        The gap between those two counts matters, and we think it is the most easily misread number
+        in this work. Beating the random control means the pluralism direction moves the output more
+        than noise of the same magnitude does. It does not mean the answer improved. Twenty-one of
+        the significant conditions still fail to clear the unsteered baseline on either judge, and in
+        those cases the vector is degrading the answer less than noise would rather than improving
+        it.
+      </p>
+      <p>
+        The two judges agree on the size of the effect and disagree on where it falls. Both place
+        religion at the bottom, at three conditions on Mistral and one on Prometheus out of
+        twenty-four. They split on the other two axes, with Mistral seeing eleven on each of origin
+        and age and Prometheus seeing sixteen and nine. We report the disagreement rather than
+        picking the judge that suits us, and we read the shared part of it, religion's near-total
+        absence, as the finding that the next section explains.
+      </p>
+
+      <h3 class="sub"><span class="n">3.2</span>The axes are never compared at the same strength</h3>
+      <p>
+        The multiplier does not set the steering strength on its own. It multiplies a vector whose
+        length falls out of how far apart the balanced and one-sided activations happen to sit, so
+        what reaches the model is the product of the two. We therefore measured the push as a
+        fraction of the hidden state it is added to.
+      </p>
+    </div>
+
+    <figure>
+      <div class="bands">
+        <div class="band-row">
+          <span class="band-label">origin</span>
+          <div class="track"><div class="band lo" style="left:11.7%; width:8.4%;">8.8&ndash;15.1%</div></div>
+        </div>
+        <div class="band-row">
+          <span class="band-label">age</span>
+          <div class="track"><div class="band mid" style="left:28.5%; width:9.1%;">21.4&ndash;28.2%</div></div>
+        </div>
+        <div class="band-row">
+          <span class="band-label">religion</span>
+          <div class="track"><div class="band hi" style="left:64.1%; width:26.4%;">48.1&ndash;67.9%</div></div>
+        </div>
+      </div>
+      <div class="axis">
+        <span></span>
+        <div class="ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span></div>
+      </div>
+      <figcaption class="col">
+        <span class="lbl">Figure 1:</span> Push magnitude as a share of the hidden state, at a shared
+        multiplier of 1.5, across all six models. The three bands never overlap: origin's largest
+        value sits below age's smallest, and age's largest sits below religion's smallest.
+      </figcaption>
+    </figure>
+
+    <div class="scroll">
+      <table>
+        <caption class="col">
+          <span class="lbl">Table 1:</span> Vector norm, hidden-state norm, and the resulting push.
+          Vector norms vary 78-fold across the eighteen cells and hidden norms vary 23-fold, yet
+          every ratio stays inside its axis band. Steering vector magnitude scales with
+          representation scale.
+        </caption>
+        <thead>
+          <tr>
+            <th rowspan="2">Model</th>
+            <th colspan="3">Vector norm</th>
+            <th colspan="3">Hidden norm</th>
+            <th colspan="3">Push (% of hidden)</th>
+          </tr>
+          <tr>
+            <th>orig</th><th>age</th><th>relig</th>
+            <th>orig</th><th>age</th><th>relig</th>
+            <th>orig</th><th>age</th><th>relig</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>SmolLM2-135M</td><td class="num">26.0</td><td class="num">82.5</td><td class="num">162.8</td><td class="num">445.7</td><td class="num">477.6</td><td class="num">452.0</td><td class="num">8.8</td><td class="num">25.9</td><td class="num">54.0</td></tr>
+          <tr><td>SmolLM2-360M</td><td class="num">47.6</td><td class="num">89.2</td><td class="num">199.7</td><td class="num">488.5</td><td class="num">583.5</td><td class="num">529.1</td><td class="num">14.6</td><td class="num">22.9</td><td class="num">56.6</td></tr>
+          <tr><td>SmolLM2-1.7B</td><td class="num">29.8</td><td class="num">84.2</td><td class="num">185.3</td><td class="num">433.6</td><td class="num">510.5</td><td class="num">458.7</td><td class="num">10.3</td><td class="num">24.7</td><td class="num">60.6</td></tr>
+          <tr><td>Qwen2.5-0.5B</td><td class="num">2.6</td><td class="num">5.8</td><td class="num">11.7</td><td class="num">25.5</td><td class="num">31.3</td><td class="num">27.4</td><td class="num">15.1</td><td class="num">27.6</td><td class="num">64.1</td></tr>
+          <tr><td>Qwen2.5-1.5B</td><td class="num">14.4</td><td class="num">40.1</td><td class="num">85.0</td><td class="num">172.8</td><td class="num">212.9</td><td class="num">187.8</td><td class="num">12.5</td><td class="num">28.2</td><td class="num">67.9</td></tr>
+          <tr><td>Qwen2.5-3B</td><td class="num">6.7</td><td class="num">13.2</td><td class="num">27.2</td><td class="num">81.0</td><td class="num">92.8</td><td class="num">84.8</td><td class="num">12.3</td><td class="num">21.4</td><td class="num">48.1</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="wide">
+      <svg viewBox="0 0 720 440" role="img" aria-label="Push magnitude against hidden-state norm, logarithmic on both axes." style="width:100%;height:auto;overflow:visible">
+<g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" fill="var(--faint)">
+<line x1="66.0" y1="26" x2="66.0" y2="388" stroke="var(--rule)" stroke-width="1"/>
+<text x="66.0" y="406" text-anchor="middle">20</text>
+<line x1="195.4" y1="26" x2="195.4" y2="388" stroke="var(--rule)" stroke-width="1"/>
+<text x="195.4" y="406" text-anchor="middle">50</text>
+<line x1="293.2" y1="26" x2="293.2" y2="388" stroke="var(--rule)" stroke-width="1"/>
+<text x="293.2" y="406" text-anchor="middle">100</text>
+<line x1="391.1" y1="26" x2="391.1" y2="388" stroke="var(--rule)" stroke-width="1"/>
+<text x="391.1" y="406" text-anchor="middle">200</text>
+<line x1="520.5" y1="26" x2="520.5" y2="388" stroke="var(--rule)" stroke-width="1"/>
+<text x="520.5" y="406" text-anchor="middle">500</text>
+<line x1="66" y1="388.0" x2="568" y2="388.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="56" y="392.0" text-anchor="end">3</text>
+<line x1="66" y1="298.9" x2="568" y2="298.9" stroke="var(--rule)" stroke-width="1"/>
+<text x="56" y="302.9" text-anchor="end">10</text>
+<line x1="66" y1="217.6" x2="568" y2="217.6" stroke="var(--rule)" stroke-width="1"/>
+<text x="56" y="221.6" text-anchor="end">30</text>
+<line x1="66" y1="128.6" x2="568" y2="128.6" stroke="var(--rule)" stroke-width="1"/>
+<text x="56" y="132.6" text-anchor="end">100</text>
+<line x1="66" y1="47.3" x2="568" y2="47.3" stroke="var(--rule)" stroke-width="1"/>
+<text x="56" y="51.3" text-anchor="end">300</text>
+</g>
+<line x1="94.4" y1="388.0" x2="568.0" y2="139.8" stroke="var(--push-lo)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.85"/>
+<text x="580" y="143.8" font-family="Source Sans 3, system-ui, sans-serif" font-size="12" fill="var(--ink)">origin &#183; 12%</text>
+<line x1="66.0" y1="349.9" x2="568.0" y2="86.8" stroke="var(--push-mid)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.85"/>
+<text x="580" y="90.8" font-family="Source Sans 3, system-ui, sans-serif" font-size="12" fill="var(--ink)">age &#183; 25%</text>
+<line x1="66.0" y1="287.2" x2="564.6" y2="26.0" stroke="var(--push-hi)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.85"/>
+<text x="580" y="28.2" font-family="Source Sans 3, system-ui, sans-serif" font-size="12" fill="var(--ink)">religion &#183; 59%</text>
+<circle cx="504.3" cy="198.1" r="5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="514.0" cy="112.8" r="5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="506.2" cy="62.5" r="5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="517.2" cy="153.4" r="5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="542.3" cy="107.0" r="5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="528.5" cy="47.4" r="5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="500.4" cy="188.2" r="5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="523.4" cy="111.3" r="5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="508.3" cy="52.9" r="5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="100.4" cy="369.7" r="5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="129.4" cy="309.7" r="5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="110.2" cy="257.3" r="5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="370.5" cy="242.1" r="5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="399.9" cy="166.3" r="5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="382.2" cy="110.6" r="5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="263.5" cy="299.1" r="5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="282.7" cy="248.3" r="5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="270.0" cy="194.9" r="5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<text x="317" y="432" text-anchor="middle" font-family="Source Sans 3, system-ui, sans-serif" font-size="12.5" fill="var(--muted)">hidden-state norm</text>
+<text x="16" y="207" text-anchor="middle" transform="rotate(-90 16 207)" font-family="Source Sans 3, system-ui, sans-serif" font-size="12.5" fill="var(--muted)">push magnitude</text>
+</svg>
+      <figcaption class="col">
+        <span class="lbl">Figure 2:</span> The same eighteen cells as Table 1, with both axes
+        logarithmic. Each point is one model on one axis; the dashed rays are the mean share
+        delivered on each axis. Points sit on their own ray across two orders of magnitude of
+        representation scale, which is the table's central claim stated geometrically: the
+        magnitude that reaches the model is fixed by the axis, not by the model.
+      </figcaption>
+    </figure>
+
+    <div class="col">
+      <div class="callout">
+        <span class="lead">The consequence is arithmetic.</span> At a multiplier of 1.5, origin
+        receives 12% and religion 59%. Bringing religion down to roughly a quarter of the hidden
+        state requires a multiplier near 0.64, and bringing origin up to the same place requires one
+        near 3.05. No single value can place all three axes in a comparable regime; they require
+        values differing by roughly fivefold.
+      </div>
+
+      <h3 class="sub"><span class="n">3.3</span>The standard strength over-steers every axis</h3>
+      <p>
+        We re-ran the pipeline with the multiplier rescaled per axis. The rescaling used a fixed
+        absolute reference rather than a proportional one, which lowered the delivered push on five
+        models and raised it on one. That was not our intention, but it produces something more
+        useful than a clean correction would have: eighteen paired comparisons in which the push
+        moved in a known direction and the judged outcome can be checked against it.
+      </p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption class="col">
+          <span class="lbl">Table 2:</span> Every model and axis before and after rescaling, scored
+          by Prometheus. Fifteen of the eighteen move as the mechanism predicts. Of the other three,
+          two are cases in which the push barely moved, by 0.3 and 1.2 percentage points, and the
+          third had a win rate of zero both before and after. Mistral also gives fifteen, though it
+          disagrees on which cases are the exceptions.
+        </caption>
+        <thead>
+          <tr>
+            <th rowspan="2">Model</th><th rowspan="2">Axis</th>
+            <th colspan="2">Push</th><th colspan="2">Win rate</th><th rowspan="2">Direction</th>
+          </tr>
+          <tr><th>before</th><th>after</th><th>before</th><th>after</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>SmolLM2-135M</td><td>religion</td><td class="num">54.0%</td><td class="num">4.6%</td><td class="num">0.000</td><td class="num up">0.333</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-135M</td><td>age</td><td class="num">25.9%</td><td class="num">4.4%</td><td class="num">0.000</td><td class="num up">0.391</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-135M</td><td>origin</td><td class="num">8.8%</td><td class="num">4.7%</td><td class="num">0.533</td><td class="num up">0.667</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-360M</td><td>religion</td><td class="num">56.6%</td><td class="num">4.0%</td><td class="num">0.000</td><td class="num up">0.368</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-360M</td><td>age</td><td class="num">22.9%</td><td class="num">3.6%</td><td class="num">0.097</td><td class="num up">0.526</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-360M</td><td>origin</td><td class="num">14.6%</td><td class="num">4.3%</td><td class="num">0.407</td><td class="num up">0.450</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-1.7B</td><td>religion</td><td class="num">60.6%</td><td class="num">4.6%</td><td class="num">0.000</td><td class="num up">0.500</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-1.7B</td><td>age</td><td class="num">24.7%</td><td class="num">4.1%</td><td class="num">0.219</td><td class="num up">0.586</td><td class="up">better</td></tr>
+          <tr><td>SmolLM2-1.7B</td><td>origin</td><td class="num">10.3%</td><td class="num">4.8%</td><td class="num">0.536</td><td class="num up">0.731</td><td class="up">better</td></tr>
+          <tr><td>Qwen2.5-1.5B</td><td>religion</td><td class="num">67.9%</td><td class="num">11.2%</td><td class="num">0.000</td><td class="num up">0.406</td><td class="up">better</td></tr>
+          <tr><td>Qwen2.5-1.5B</td><td>age</td><td class="num">28.2%</td><td class="num">9.9%</td><td class="num">0.043</td><td class="num up">0.520</td><td class="up">better</td></tr>
+          <tr><td>Qwen2.5-1.5B</td><td>origin</td><td class="num">12.5%</td><td class="num">12.2%</td><td class="num">0.483</td><td class="num">0.375</td><td class="dim">push flat</td></tr>
+          <tr><td>Qwen2.5-3B</td><td>religion</td><td class="num">48.1%</td><td class="num">24.7%</td><td class="num">0.022</td><td class="num up">0.676</td><td class="up">better</td></tr>
+          <tr><td>Qwen2.5-3B</td><td>age</td><td class="num">21.4%</td><td class="num">22.6%</td><td class="num">0.629</td><td class="num">0.639</td><td class="dim">push flat</td></tr>
+          <tr><td>Qwen2.5-3B</td><td>origin</td><td class="num">12.3%</td><td class="num">25.9%</td><td class="num">0.467</td><td class="num">0.333</td><td class="dim">worse</td></tr>
+          <tr><td>Qwen2.5-0.5B</td><td>religion</td><td class="num">64.1%</td><td class="num">76.8%</td><td class="num">0.000</td><td class="num">0.000</td><td class="dim">worse</td></tr>
+          <tr><td>Qwen2.5-0.5B</td><td>age</td><td class="num">27.6%</td><td class="num">67.0%</td><td class="num">0.250</td><td class="num">0.000</td><td class="dim">worse</td></tr>
+          <tr><td>Qwen2.5-0.5B</td><td>origin</td><td class="num">15.1%</td><td class="num">82.3%</td><td class="num">0.182</td><td class="num">0.000</td><td class="dim">worse</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="wide">
+      <svg viewBox="0 0 720 450" role="img" aria-label="Judged win rate against delivered push, with the eighteen before-and-after pairs joined." style="width:100%;height:auto;overflow:visible">
+<g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" fill="var(--faint)">
+<line x1="62.0" y1="26" x2="62.0" y2="398" stroke="var(--rule)" stroke-width="1"/>
+<text x="62.0" y="416" text-anchor="middle">3%</text>
+<line x1="139.2" y1="26" x2="139.2" y2="398" stroke="var(--rule)" stroke-width="1"/>
+<text x="139.2" y="416" text-anchor="middle">5%</text>
+<line x1="244.0" y1="26" x2="244.0" y2="398" stroke="var(--rule)" stroke-width="1"/>
+<text x="244.0" y="416" text-anchor="middle">10%</text>
+<line x1="348.7" y1="26" x2="348.7" y2="398" stroke="var(--rule)" stroke-width="1"/>
+<text x="348.7" y="416" text-anchor="middle">20%</text>
+<line x1="453.5" y1="26" x2="453.5" y2="398" stroke="var(--rule)" stroke-width="1"/>
+<text x="453.5" y="416" text-anchor="middle">40%</text>
+<line x1="558.3" y1="26" x2="558.3" y2="398" stroke="var(--rule)" stroke-width="1"/>
+<text x="558.3" y="416" text-anchor="middle">80%</text>
+<line x1="62" y1="398.0" x2="592" y2="398.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="402.0" text-anchor="end">0.00</text>
+<line x1="62" y1="305.0" x2="592" y2="305.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="309.0" text-anchor="end">0.25</text>
+<line x1="62" y1="212.0" x2="592" y2="212.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="216.0" text-anchor="end">0.50</text>
+<line x1="62" y1="119.0" x2="592" y2="119.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="123.0" text-anchor="end">0.75</text>
+<line x1="62" y1="26.0" x2="592" y2="26.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="30.0" text-anchor="end">1.00</text>
+</g>
+<line x1="62" y1="212.0" x2="592" y2="212.0" stroke="var(--muted)" stroke-width="1.25" stroke-dasharray="2 3"/>
+<text x="602" y="216.0" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--muted)">parity</text>
+<line x1="224.7" y1="199.6" x2="130.2" y2="150.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="387.8" y1="398.0" x2="119.8" y2="252.4" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="498.9" y1="398.0" x2="128.1" y2="274.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="301.2" y1="246.4" x2="116.4" y2="230.6" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="369.2" y1="362.0" x2="89.5" y2="202.2" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="506.0" y1="398.0" x2="104.3" y2="260.9" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="248.4" y1="198.7" x2="134.4" y2="126.2" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="380.6" y1="316.6" x2="109.7" y2="179.9" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="516.3" y1="398.0" x2="125.9" y2="212.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="306.3" y1="330.4" x2="562.5" y2="398.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="397.4" y1="305.0" x2="531.5" y2="398.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="524.8" y1="398.0" x2="552.0" y2="398.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="277.7" y1="218.4" x2="273.4" y2="258.5" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="400.7" y1="381.8" x2="241.9" y2="204.6" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="533.5" y1="398.0" x2="260.9" y2="246.9" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="275.3" y1="224.4" x2="387.9" y2="274.0" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="359.0" y1="164.2" x2="367.4" y2="160.3" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<line x1="481.4" y1="389.9" x2="380.9" y2="146.4" stroke="var(--faint)" stroke-width="1" opacity="0.55"/>
+<circle cx="224.7" cy="199.6" r="4.5" fill="var(--paper)" stroke="var(--push-lo)" stroke-width="2"/>
+<circle cx="130.2" cy="150.0" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="387.8" cy="398.0" r="4.5" fill="var(--paper)" stroke="var(--push-mid)" stroke-width="2"/>
+<circle cx="119.8" cy="252.4" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="498.9" cy="398.0" r="4.5" fill="var(--paper)" stroke="var(--push-hi)" stroke-width="2"/>
+<circle cx="128.1" cy="274.0" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="301.2" cy="246.4" r="4.5" fill="var(--paper)" stroke="var(--push-lo)" stroke-width="2"/>
+<circle cx="116.4" cy="230.6" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="369.2" cy="362.0" r="4.5" fill="var(--paper)" stroke="var(--push-mid)" stroke-width="2"/>
+<circle cx="89.5" cy="202.2" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="506.0" cy="398.0" r="4.5" fill="var(--paper)" stroke="var(--push-hi)" stroke-width="2"/>
+<circle cx="104.3" cy="260.9" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="248.4" cy="198.7" r="4.5" fill="var(--paper)" stroke="var(--push-lo)" stroke-width="2"/>
+<circle cx="134.4" cy="126.2" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="380.6" cy="316.6" r="4.5" fill="var(--paper)" stroke="var(--push-mid)" stroke-width="2"/>
+<circle cx="109.7" cy="179.9" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="516.3" cy="398.0" r="4.5" fill="var(--paper)" stroke="var(--push-hi)" stroke-width="2"/>
+<circle cx="125.9" cy="212.0" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="306.3" cy="330.4" r="4.5" fill="var(--paper)" stroke="var(--push-lo)" stroke-width="2"/>
+<circle cx="562.5" cy="398.0" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="397.4" cy="305.0" r="4.5" fill="var(--paper)" stroke="var(--push-mid)" stroke-width="2"/>
+<circle cx="531.5" cy="398.0" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="524.8" cy="398.0" r="4.5" fill="var(--paper)" stroke="var(--push-hi)" stroke-width="2"/>
+<circle cx="552.0" cy="398.0" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="277.7" cy="218.4" r="4.5" fill="var(--paper)" stroke="var(--push-lo)" stroke-width="2"/>
+<circle cx="273.4" cy="258.5" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="400.7" cy="381.8" r="4.5" fill="var(--paper)" stroke="var(--push-mid)" stroke-width="2"/>
+<circle cx="241.9" cy="204.6" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="533.5" cy="398.0" r="4.5" fill="var(--paper)" stroke="var(--push-hi)" stroke-width="2"/>
+<circle cx="260.9" cy="246.9" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="275.3" cy="224.4" r="4.5" fill="var(--paper)" stroke="var(--push-lo)" stroke-width="2"/>
+<circle cx="387.9" cy="274.0" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="359.0" cy="164.2" r="4.5" fill="var(--paper)" stroke="var(--push-mid)" stroke-width="2"/>
+<circle cx="367.4" cy="160.3" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<circle cx="481.4" cy="389.9" r="4.5" fill="var(--paper)" stroke="var(--push-hi)" stroke-width="2"/>
+<circle cx="380.9" cy="146.4" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<polyline points="153.0,208.4 296.4,246.2 391.0,278.7 512.7,397.1" fill="none" stroke="var(--orange)" stroke-width="2.5" stroke-linejoin="round"/>
+<rect x="149.0" y="204.4" width="8" height="8" fill="var(--orange)" stroke="var(--paper)" stroke-width="1.25"/>
+<rect x="292.4" y="242.2" width="8" height="8" fill="var(--orange)" stroke="var(--paper)" stroke-width="1.25"/>
+<rect x="387.0" y="274.7" width="8" height="8" fill="var(--orange)" stroke="var(--paper)" stroke-width="1.25"/>
+<rect x="508.7" y="393.1" width="8" height="8" fill="var(--orange)" stroke="var(--paper)" stroke-width="1.25"/>
+<text x="163.0" y="198.4" font-family="Source Sans 3, system-ui, sans-serif" font-size="12" font-weight="600" fill="var(--orange)">bin mean</text>
+<g font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">
+<circle cx="268" cy="46" r="4.5" fill="var(--push-lo)" stroke="var(--ink)" stroke-width="1"/>
+<text x="280" y="50">origin</text>
+<circle cx="268" cy="62" r="4.5" fill="var(--push-mid)" stroke="var(--ink)" stroke-width="1"/>
+<text x="280" y="66">age</text>
+<circle cx="268" cy="78" r="4.5" fill="var(--push-hi)" stroke="var(--ink)" stroke-width="1"/>
+<text x="280" y="82">religion</text>
+<circle cx="376" cy="46" r="4.5" fill="var(--paper)" stroke="var(--muted)" stroke-width="2"/>
+<text x="388" y="50">shared multiplier</text>
+<circle cx="376" cy="62" r="4.5" fill="var(--muted)" stroke="var(--ink)" stroke-width="1"/>
+<text x="388" y="66">after rescaling</text>
+</g>
+<text x="327" y="442" text-anchor="middle" font-family="Source Sans 3, system-ui, sans-serif" font-size="12.5" fill="var(--muted)">delivered push, share of hidden state</text>
+<text x="14" y="212" text-anchor="middle" transform="rotate(-90 14 212)" font-family="Source Sans 3, system-ui, sans-serif" font-size="12.5" fill="var(--muted)">judged win rate</text>
+</svg>
+      <figcaption class="col">
+        <span class="lbl">Figure 3:</span> Every row of Table 2 plotted twice, once at the shared
+        multiplier (hollow) and once after rescaling (filled), joined by a thin line. The horizontal
+        axis is logarithmic. Across all thirty-six points the rank correlation between delivered push
+        and judged win rate is &minus;0.73, and between the change in push and the change in win rate
+        it is &minus;0.86. Both are significant under a permutation test at p &lt; 0.001. The claim is
+        not that rescaling helps; it is that the push itself is what moves the outcome, in whichever
+        direction it is moved.
+      </figcaption>
+    </figure>
+
+    <div class="scroll">
+      <table>
+        <caption class="col">
+          <span class="lbl">Table 3:</span> The same thirty-six points grouped into push bands. The
+          relationship is monotonic and the collapse is not gradual: past roughly a third of the
+          hidden state the judged win rate is indistinguishable from zero.
+        </caption>
+        <thead>
+          <tr><th>Delivered push</th><th>Points</th><th>Mean win rate</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>under 10%</td><td class="num">11</td><td class="num up">0.510</td></tr>
+          <tr><td>10&ndash;20%</td><td class="num">7</td><td class="num">0.408</td></tr>
+          <tr><td>20&ndash;35%</td><td class="num">9</td><td class="num">0.321</td></tr>
+          <tr><td>above 35%</td><td class="num">9</td><td class="num dim">0.002</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>
+        The push fell in thirteen of the eighteen cases and the outcome improved in twelve of those.
+        It rose in five and the outcome worsened in three. Religion is the clearest case: it sits
+        furthest past the point at which the intervention stops nudging the answer and begins
+        overwriting it, which is why a shared-strength comparison reads it as a dead axis. On
+        Qwen2.5-3B, where the push fell from 48.1% to 24.7%, the religion win rate moved from 0.022
+        to 0.676 and the whole interval clears 0.50 on both judges. Qwen2.5-0.5B illustrates the
+        other direction: its hidden state has a norm of only 25.5, so the fixed push was worth 77% to
+        82% of the representation on every axis, and it is the one model where every axis fell to
+        zero.
+      </p>
+      <div class="callout">
+        <span class="lead">Religion was never unsteerable.</span> The same over-steering was
+        happening to origin and age in milder form: at the standard strength every axis on every
+        model we tested is pushed too hard. That is the finding, and it rests on eighteen paired
+        comparisons rather than on any single model. <em>We therefore recommend that steering
+        strength be reported as a fraction of hidden-state norm rather than as a bare multiplier.</em>
+      </div>
+
+      <h3 class="sub"><span class="n">3.4</span>Hyperparameters do not transfer from larger models</h3>
+      <p>
+        We used an injection depth of 45%, taken from <span class="cite">Im and Li's (2026)</span>
+        result on a 7B model. A sweep across five depths shows the two families disagree. All three
+        SmolLM2 models peak at the shallowest depth we tested, 25%, and on every one of those rows
+        the inherited 45% falls between the two worst points available. None of the Qwen models peak
+        there: Qwen2.5-3B peaks at 85%, Qwen2.5-0.5B at 70% and Qwen2.5-1.5B at 55%. Our main results
+        were therefore produced at a poor injection depth for half the models tested, which means the
+        effects we report are, if anything, understated.
+      </p>
+      <p>
+        Qwen2.5-1.5B deserves separate mention because it is negative at every depth. Nothing we
+        tried made steering help that model, so its peak is the least bad option rather than a good
+        one, and we do not read it as evidence for a depth.
+      </p>
+    </div>
+
+    <figure class="wide">
+      <svg viewBox="0 0 720 420" role="img" aria-label="Relevance of the steered answer against injection depth, one line per model." style="width:100%;height:auto;overflow:visible">
+<g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" fill="var(--faint)">
+<line x1="62.0" y1="26" x2="62.0" y2="368" stroke="var(--rule)" stroke-width="1"/>
+<text x="62.0" y="386" text-anchor="middle">25%</text>
+<line x1="202.3" y1="26" x2="202.3" y2="368" stroke="var(--rule)" stroke-width="1"/>
+<text x="202.3" y="386" text-anchor="middle">41%</text>
+<line x1="325.0" y1="26" x2="325.0" y2="368" stroke="var(--rule)" stroke-width="1"/>
+<text x="325.0" y="386" text-anchor="middle">55%</text>
+<line x1="456.5" y1="26" x2="456.5" y2="368" stroke="var(--rule)" stroke-width="1"/>
+<text x="456.5" y="386" text-anchor="middle">70%</text>
+<line x1="588.0" y1="26" x2="588.0" y2="368" stroke="var(--rule)" stroke-width="1"/>
+<text x="588.0" y="386" text-anchor="middle">85%</text>
+<line x1="62" y1="368.0" x2="588" y2="368.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="372.0" text-anchor="end">-0.30</text>
+<line x1="62" y1="292.0" x2="588" y2="292.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="296.0" text-anchor="end">-0.20</text>
+<line x1="62" y1="216.0" x2="588" y2="216.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="220.0" text-anchor="end">-0.10</text>
+<line x1="62" y1="140.0" x2="588" y2="140.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="144.0" text-anchor="end">+0.00</text>
+<line x1="62" y1="64.0" x2="588" y2="64.0" stroke="var(--rule)" stroke-width="1"/>
+<text x="52" y="68.0" text-anchor="end">+0.10</text>
+</g>
+<line x1="62" y1="140.0" x2="588" y2="140.0" stroke="var(--muted)" stroke-width="1.25"/>
+<line x1="237.3" y1="26" x2="237.3" y2="368" stroke="var(--ink)" stroke-width="1.25" stroke-dasharray="4 3"/>
+<text x="243.3" y="38" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">45%, inherited</text>
+<polyline points="62.0,59.1 202.3,303.7 325.0,285.8 456.5,123.9 588.0,75.2" fill="none" stroke="var(--push-hi)" stroke-width="2" stroke-dasharray="none" stroke-linejoin="round"/>
+<circle cx="62.0" cy="59.1" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="202.3" cy="303.7" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="325.0" cy="285.8" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="456.5" cy="123.9" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="588.0" cy="75.2" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<polyline points="62.0,58.2 202.3,208.4 325.0,153.1 456.5,94.5 588.0,65.3" fill="none" stroke="var(--push-hi)" stroke-width="2" stroke-dasharray="6 3" stroke-linejoin="round"/>
+<circle cx="62.0" cy="58.2" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="202.3" cy="208.4" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="325.0" cy="153.1" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="456.5" cy="94.5" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="588.0" cy="65.3" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<polyline points="62.0,62.2 202.3,158.1 325.0,122.8 456.5,73.2 588.0,72.3" fill="none" stroke="var(--push-hi)" stroke-width="2" stroke-dasharray="2 3" stroke-linejoin="round"/>
+<circle cx="62.0" cy="62.2" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="202.3" cy="158.1" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="325.0" cy="122.8" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="456.5" cy="73.2" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="588.0" cy="72.3" r="3" fill="var(--push-hi)" stroke="var(--paper)" stroke-width="1"/>
+<polyline points="62.0,229.6 202.3,220.9 325.0,145.4 456.5,113.6 588.0,113.9" fill="none" stroke="var(--push-mid)" stroke-width="2" stroke-dasharray="none" stroke-linejoin="round"/>
+<circle cx="62.0" cy="229.6" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="202.3" cy="220.9" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="325.0" cy="145.4" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="456.5" cy="113.6" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="588.0" cy="113.9" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<polyline points="62.0,358.1 202.3,267.2 325.0,229.6 456.5,261.9 588.0,317.2" fill="none" stroke="var(--push-mid)" stroke-width="2" stroke-dasharray="6 3" stroke-linejoin="round"/>
+<circle cx="62.0" cy="358.1" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="202.3" cy="267.2" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="325.0" cy="229.6" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="456.5" cy="261.9" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="588.0" cy="317.2" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<polyline points="62.0,94.2 202.3,117.2 325.0,99.5 456.5,100.5 588.0,85.7" fill="none" stroke="var(--push-mid)" stroke-width="2" stroke-dasharray="2 3" stroke-linejoin="round"/>
+<circle cx="62.0" cy="94.2" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="202.3" cy="117.2" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="325.0" cy="99.5" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="456.5" cy="100.5" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<circle cx="588.0" cy="85.7" r="3" fill="var(--push-mid)" stroke="var(--paper)" stroke-width="1"/>
+<line x1="596" y1="65.3" x2="614" y2="65.3" stroke="var(--push-hi)" stroke-width="2" stroke-dasharray="6 3"/>
+<text x="620" y="69.3" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">SmolLM2-360M</text>
+<line x1="596" y1="86.3" x2="614" y2="86.3" stroke="var(--push-hi)" stroke-width="2" stroke-dasharray="2 3"/>
+<text x="620" y="90.3" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">SmolLM2-1.7B</text>
+<line x1="596" y1="103.2" x2="614" y2="103.2" stroke="var(--push-hi)" stroke-width="2" stroke-dasharray="none"/>
+<text x="620" y="107.2" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">SmolLM2-135M</text>
+<line x1="596" y1="127.7" x2="614" y2="127.7" stroke="var(--push-mid)" stroke-width="2" stroke-dasharray="2 3"/>
+<text x="620" y="131.7" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">Qwen2.5-3B</text>
+<line x1="596" y1="141.9" x2="614" y2="141.9" stroke="var(--push-mid)" stroke-width="2" stroke-dasharray="none"/>
+<text x="620" y="145.9" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">Qwen2.5-0.5B</text>
+<line x1="596" y1="317.2" x2="614" y2="317.2" stroke="var(--push-mid)" stroke-width="2" stroke-dasharray="6 3"/>
+<text x="620" y="321.2" font-family="Source Sans 3, system-ui, sans-serif" font-size="11.5" fill="var(--ink)">Qwen2.5-1.5B</text>
+<text x="325" y="412" text-anchor="middle" font-family="Source Sans 3, system-ui, sans-serif" font-size="12.5" fill="var(--muted)">injection depth, fraction of layers</text>
+<text x="14" y="197" text-anchor="middle" transform="rotate(-90 14 197)" font-family="Source Sans 3, system-ui, sans-serif" font-size="12.5" fill="var(--muted)">relevance of steered answer</text>
+</svg>
+      <figcaption class="col">
+        <span class="lbl">Figure 4:</span> Relevance of the steered answer against injection depth,
+        averaged over the three axes. Orange is the SmolLM2 family and grey is Qwen. The dashed
+        vertical rule marks the 45% depth inherited from prior work, which lands in the trough for
+        all three SmolLM2 models and below the peak for all three Qwen models.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pale">
+  <div class="col">
+    <h2 class="head"><span class="n">4</span>Discussion</h2>
+    <p>
+      <span class="lead">Null results from shared-strength comparisons are unsafe.</span> Had we
+      stopped after Section 3.1, we would have reported that religion cannot be steered in small
+      models, that steering is weak, and that origin is the axis that holds up. All three statements
+      are artefacts of comparing axes at a multiplier that means different things to each of them. We
+      think this is the most transferable thing in this work, because the design that produced it is
+      the obvious one.
+    </p>
+    <p>
+      <span class="lead">Automatic metrics are not sufficient here.</span> On the origin axis of
+      Qwen2.5-3B, no estimator separates from random noise of the same magnitude: the best of the
+      four scores 0.087 against the control's 0.088. The same holds on SmolLM2-135M, where the best
+      estimator scores 0.143 against 0.164. The judged comparison distinguishes conditions that
+      relevance scoring reads as identical, and a study relying on relevance alone would have called
+      both of those cells dead.
+    </p>
+    <p>
+      <span class="lead">Tie rates deserve reporting.</span> Ties take 48.8% of our judged pairs
+      overall, 54.1% on Mistral and 43.6% on Prometheus, but the figure runs from 5.5% to 87.5%
+      depending on the condition. A nominal sample of 200 questions therefore yields a median of 100
+      decided comparisons and as few as 25 in the worst case. We changed our own conclusion when we
+      moved from 60 pairs per condition to the full 200.
+    </p>
+    <p>
+      <span class="lead">Judge agreement is better than kappa suggests.</span> Our two judges reach
+      a pooled Cohen's κ of 0.329, falling to 0.248 averaged over the eighteen model-axis cells,
+      which reads as only fair either way. But across 17,950 shared pairs they agree outright on
+      61.4% and name opposite winners on 373, or 2.08%. Almost all disagreement concerns where the
+      tie line falls, and κ penalises a tie-against-win mismatch exactly as harshly as a full
+      reversal.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <h2 class="head"><span class="n">5</span>Conclusion</h2>
+    <p>
+      In this work we asked whether activation steering can make small language models hold more than
+      one cultural viewpoint, and we found that the answer depends almost entirely on a quantity the
+      method does not expose. The multiplier that appears to set steering strength does not set it;
+      the product of that multiplier and the vector's own magnitude does, and that magnitude scales
+      with the model's representation. Measured properly, the three demographic axes we tested occupy
+      separate and non-overlapping bands of intervention strength, and no single setting reaches all
+      three.
+    </p>
+    <p>
+      At the strength inherited from work on larger models, every axis on every model we tested is
+      over-steered. Religion is worst affected because it starts furthest out, which is why it reads
+      as unresponsive under a shared setting, but the effect is present on all three axes. We take
+      from this that the method is more capable than a shared-strength evaluation makes it appear,
+      and that the confound was doing more work than the method in our own initial results.
+    </p>
+    <p>
+      We do not claim to have located the operating range. Our comparisons span pushes between
+      roughly 4% and 25% of the hidden state, all of which outperform the standard setting, but we
+      did not sample that space finely enough to find an optimum. That is the experiment we would run
+      next.
+    </p>
+  </div>
+</section>
+
+<section class="pale">
+  <div class="col">
+    <h2 class="head">Limitations</h2>
+    <div class="lims">
+      <p>
+        <span class="lead">Our judges are not independent.</span> Prometheus 2 is fine-tuned from
+        Mistral-7B, so both of our judges rest on the same pretraining. Their agreeing is weaker
+        evidence than agreement between unrelated judges would be, and any cultural blind spot in
+        that base model is invisible to our protocol.
+      </p>
+      <p>
+        <span class="lead">Position bias is uneven across judges.</span> Prometheus is
+        position-locked on 22.5% of pairs in the rescaled run that Table 2 rests on, and on 13.0% of
+        main-run pairs, rising to 31.7% on Qwen2.5-3B. All of that is above the threshold at which we
+        treat its verdicts as reliable. Mistral stays at 3.4% in both runs and never exceeds 5.3% for
+        any model. Table 2 rests on Prometheus, so this is the weakest joint in the argument, though
+        Mistral moves the same way on fifteen of the eighteen pairs.
+      </p>
+      <p>
+        <span class="lead">Low-push improvements are partly ties.</span> Where the delivered push
+        fell to around 4%, tie rates roughly doubled. Some of what we score as improvement is the
+        steered answer becoming difficult to distinguish from the baseline rather than becoming more
+        pluralistic, and our protocol cannot separate those two.
+      </p>
+      <p>
+        <span class="lead">We have no human validation.</span> We exported a blinded sample for human
+        scoring but did not complete it, so every claim about pluralism here rests on LLM judgement
+        alone.
+      </p>
+      <p>
+        <span class="lead">One axis is narrower than its label.</span> Our religious group is 87%
+        Christian, so results we report for religion are closer to Christian-against-secular.
+      </p>
+      <p>
+        <span class="lead">Our evaluation is monolingual.</span> All generation and judging is in
+        English, while the cultural axes we study are not. <em>There is a need for culturally
+        situated multilingual evaluation of steering that we have not attempted here.</em>
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="col">
+    <h2 class="head">Status</h2>
+    <p>
+      This is an ongoing project and the page will change as work continues. Every number here comes
+      from a single complete run of all six models finished on 19 August 2026; nothing is carried
+      over from earlier partial runs. Four things are outstanding, and we would not want the results
+      above read as settled without them.
+    </p>
+    <p>
+      We have not located the operating range. Our comparisons land at roughly 4% and at roughly 25%
+      of the hidden state, and we need a sweep between those points, measured as a fraction of the
+      norm rather than as a multiplier, to find where the intervention actually works best. We have
+      not added a third judge from an unrelated family, which is the only way to test whether our
+      two judges agree because they are right or because they share a base model. We have not
+      completed the human review of the blinded sample we exported. And we have not re-run the main
+      experiment at the injection depth each family actually prefers, which Section 3.4 shows is not
+      the one we used.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="col">
+    MIORPA 2026 · Mathematical Institute Research Program with Africa, University of Oxford
+  </div>
+</footer>
+</body>
+</html>

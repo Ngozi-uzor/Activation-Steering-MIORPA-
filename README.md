@@ -6,6 +6,12 @@ MIORPA 2026 — Mathematical Institute Research Program with Africa, University 
 Blessing Ngozi Uzor. 
 Supervisor: Simona Frenda, PhD, Heriot-Watt University.
 
+## Project page
+
+[ngozi-uzor.github.io/Activation-Steering-MIORPA-](https://ngozi-uzor.github.io/Activation-Steering-MIORPA-/) — method, figures and findings in one page.
+
+It is served straight from `index.html` in this repository. To turn it on: **Settings → Pages → Source: Deploy from a branch → Branch: `main`, folder: `/ (root)` → Save.** The first build takes a minute or two.
+
 ## What this does
 
 Language models trained mostly on Western, English-speaking feedback tend to answer questions about religion, family or economic values from one cultural position as though it were the neutral one. Fine-tuning fixes that but has to be redone per culture, and retrieval makes every prompt longer. Neither suits a setting with little compute.
@@ -38,6 +44,7 @@ The first cell mounts Google Drive and saves everything to `MyDrive/MIORPA PROJE
 | `MIORPA_Colab_Source.ipynb` | Same notebook with readable code instead of the packed copy. Read this one. |
 | `build_selfcontained.ps1` | Builds the first from the second by embedding the package. |
 | `PROJECT_WRITEUP.md` | Full method and results. |
+| `index.html` | The project page. Everything is inline, so it needs no build step and no server. |
 | `miorpa/` | The implementation. |
 
 Inside `miorpa/`:
@@ -57,19 +64,24 @@ Inside `miorpa/`:
 
 ## What we have found so far
 
-The research question is **not settled**. What is established:
+The research question is **not settled**. What is established, all of it from the single full run of 19 August 2026:
 
-- Steering vector magnitude scales with hidden-state magnitude, so the three axes receive very different interventions at the same alpha — around 12%, 25% and 59% of the hidden state for origin, age and religion. The three bands do not overlap across any of the six models.
+- Steering vector magnitude scales with hidden-state magnitude, so the three axes receive very different interventions at the same alpha — around 12%, 25% and 59% of the hidden state for origin, age and religion. The three bands do not overlap across any of the six models, despite a 78-fold spread in vector norm and a 23-fold spread in hidden norm.
 - No single alpha can put the axes in a comparable regime; they would need values differing by roughly 5×. So any multi-axis comparison at one shared alpha is measuring something other than what it claims.
-- Correcting for this restores religion's coherence, which had collapsed under the shared setting, and closes the gap between axes in five of six models.
-- Steering beats a matched random control in 24 of 72 conditions, but only 4 beat the unsteered baseline outright. In most conditions with a measurable effect, not steering would have been better.
-- The injection depth taken from prior work (45%) is close to the worst available choice for every SmolLM2 model, which prefer 25%.
+- The push itself is what moves the judged outcome. Across the 36 points of the before-and-after comparison the rank correlation between delivered push and win rate is −0.73, and between the change in push and the change in win rate it is −0.86. Both hold under a permutation test at p < 0.001. Below 10% of the hidden state the mean win rate is 0.510; above 35% it is 0.002.
+- Fifteen of the eighteen model-axis pairs move as that predicts, on both judges independently. Religion, which reads as a dead axis at the shared setting, recovers once the intervention stops overwriting the representation. It was never unsteerable — it was simply furthest past the point where steering turns into overwriting.
+- Steering beats a matched random control in 25 of 72 conditions on Mistral and 26 on Prometheus, but only 4 and 5 respectively beat the unsteered baseline outright. In most conditions with a measurable effect, not steering would have been better.
+- The injection depth taken from prior work (45%) is close to the worst available choice for every SmolLM2 model, which prefer 25%. The Qwen models prefer deeper, between 55% and 85%.
 
-The corrected condition has only been scored on coherence, not on pluralism. Whether equalising the push actually produces more pluralistic answers is the next run. See `PROJECT_WRITEUP.md` for the full picture, including what is not reproducible from the current results.
+Four things are outstanding: a sweep between 4% and 25% push to locate the operating range, a third judge from an unrelated family, the human review of the blinded sample, and a re-run at each family's preferred injection depth. See `PROJECT_WRITEUP.md` for the full picture, including what is not reproducible from the current results.
 
 ## Data
 
-[PRISM](https://huggingface.co/datasets/HannahRoseKirk/prism-alignment) (Kirk et al., 2024) — 1,500+ participants across 75 countries, 8,000+ conversations, 68,000+ ratings, each tied to the rater's demographic profile. It is gated on Hugging Face, so accept the terms on the dataset page before the first run. It is not included in this repository.
+Two datasets, doing different jobs.
+
+**Calibration** — [PRISM](https://huggingface.co/datasets/HannahRoseKirk/prism-alignment) (Kirk et al., 2024), 1,500+ participants across 75 countries, 8,000+ conversations, 68,000+ ratings, each tied to the rater's demographic profile. That linkage is what makes the axes possible; most preference datasets discard it. It is gated on Hugging Face, so accept the terms on the dataset page before the first run. It is not included in this repository.
+
+**Evaluation** — [GlobalOpinionQA](https://huggingface.co/datasets/Anthropic/llm_global_opinions) (Durmus et al., 2024), which collects items from the World Values Survey and the Pew Global Attitudes survey. 200 questions per axis. These are held apart from the calibration data, so no model is tested on what it was steered with.
 
 ## Built on
 
