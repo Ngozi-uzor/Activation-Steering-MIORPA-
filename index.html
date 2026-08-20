@@ -50,6 +50,7 @@
 
     --measure: 44rem;
     --wide: 64rem;
+    --banner: 80rem;
   }
 
   /* The page prints on white in every viewing context. It is a paper, not an
@@ -69,8 +70,10 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  .col  { max-width: var(--measure); margin-inline: auto; }
-  .wide { max-width: var(--wide);    margin-inline: auto; }
+  .col    { max-width: var(--measure); margin-inline: auto; }
+  .wide   { max-width: var(--wide);    margin-inline: auto; }
+  /* Wider than the body text so the title has room to run on one line. */
+  .banner { max-width: var(--banner);  margin-inline: auto; }
 
   .sans { font-family: "Source Sans 3", system-ui, sans-serif; }
 
@@ -85,11 +88,21 @@
     font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
     color: var(--orange); font-weight: 500; margin: 0 0 1.5rem;
   }
+  /* The title runs on one line wherever there is room for it. Below that the
+     size is driven by the viewport rather than the container, so the line
+     shrinks to fit instead of breaking. It only wraps on phones, where a
+     single line would be too small to read. */
   .masthead h1 {
     font-family: "Source Serif 4", Georgia, serif;
-    font-size: clamp(1.85rem, 4.3vw, 2.7rem); font-weight: 700;
-    line-height: 1.16; letter-spacing: -0.012em; text-wrap: balance;
-    margin: 0 auto; max-width: 24ch;
+    font-weight: 700; line-height: 1.16; letter-spacing: -0.015em;
+    margin: 0 auto; max-width: 24ch; text-wrap: balance;
+    font-size: clamp(1.5rem, 5vw, 2rem);
+  }
+  @media (min-width: 46rem) {
+    .masthead h1 {
+      white-space: nowrap; max-width: none; text-wrap: nowrap;
+      font-size: min(2.5rem, 3.15vw);
+    }
   }
   .status {
     display: inline-flex; align-items: center; gap: 0.5rem;
@@ -124,19 +137,6 @@
   .btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
   .btn.ghost { background: transparent; color: var(--on-dark); border: 1px solid rgba(255,255,255,0.3); }
   .btn svg { width: 0.95rem; height: 0.95rem; fill: currentColor; }
-
-  /* ---------- abstract ---------- */
-  .abstract {
-    background: var(--pale); padding: 3rem 1.5rem;
-    border-bottom: 1px solid var(--rule);
-  }
-  .abstract h2 {
-    font-family: "Source Sans 3", system-ui, sans-serif;
-    font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase;
-    font-weight: 700; text-align: center; color: var(--muted);
-    margin: 0 0 1.4rem;
-  }
-  .abstract p { text-align: justify; hyphens: auto; margin: 0; font-size: 1.0125rem; }
 
   /* ---------- sections ---------- */
   section { padding: 3.25rem 1.5rem; }
@@ -255,6 +255,11 @@
   /* ---------- limitations ---------- */
   .lims { margin-top: 1.2rem; }
   .lims p { margin-top: 1.15rem; }
+  .lims p.more {
+    margin-top: 1.9rem; padding-top: 1.3rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.96rem; color: var(--muted);
+  }
 
   a { color: var(--orange); }
   a:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
@@ -268,13 +273,13 @@
 
   @media (max-width: 34rem) {
     .band-row, .axis { grid-template-columns: 3.5rem 1fr; }
-    p, .abstract p { text-align: left; }
+    p { text-align: left; }
   }
 </style>
 </head>
 <body>
 <div class="masthead">
-  <div class="wide">
+  <div class="banner">
     <p class="venue">MIORPA 2026 · Research Program with Africa</p>
     <p class="status"><span class="dot" aria-hidden="true"></span>Ongoing project · not yet peer reviewed</p>
     <h1>Pluralistic Activation Steering for Small Language Models</h1>
@@ -294,32 +299,9 @@
   </div>
 </div>
 
-<div class="abstract">
-  <div class="col">
-    <h2>Abstract</h2>
-    <p>
-      We study whether activation steering can make small language models produce answers that hold
-      more than one cultural viewpoint. We build a pluralism direction from contrastive human ratings
-      in the PRISM alignment dataset and apply it to six models under 3B parameters across three
-      demographic axes, evaluating 21,600 generations with two independent LLM judges over 71,800
-      pairwise comparisons. We observe that steering strength is not set by the multiplier alone: it
-      is the product of that multiplier and a vector whose length varies with the model. Measured as
-      a share of the hidden state it is added to, the intervention occupies three non-overlapping
-      bands, roughly 12% for origin, 25% for age and 59% for religion, and these bands hold across
-      two model families and a 23-fold spread in representation scale. We show that no single
-      multiplier can place the three axes in a comparable regime, and that at the strength inherited
-      from prior work every axis on every model is over-steered. Across eighteen paired comparisons,
-      lowering the push improves the judged outcome in twelve of thirteen cases. Religion, which
-      reads as a dead axis under a shared setting, recovers once the intervention stops overwriting
-      the representation. We argue that null results reported from shared-strength multi-axis
-      comparisons are unsafe.
-    </p>
-  </div>
-</div>
-
 <section>
   <div class="col">
-    <h2 class="head"><span class="n">1</span>Introduction</h2>
+    <h2 class="head"><span class="n">1</span>Motivation</h2>
     <p>
       Language models trained mostly on feedback from Western, English-speaking users tend to answer
       questions about religion, family or economic values from one cultural position, as though it
@@ -989,10 +971,11 @@
     <h2 class="head">Limitations</h2>
     <div class="lims">
       <p>
-        <span class="lead">Our judges are not independent.</span> Prometheus 2 is fine-tuned from
-        Mistral-7B, so both of our judges rest on the same pretraining. Their agreeing is weaker
-        evidence than agreement between unrelated judges would be, and any cultural blind spot in
-        that base model is invisible to our protocol.
+        <span class="lead">Low-push improvements are partly ties.</span> Where the delivered push
+        fell to around 4%, tie rates roughly doubled. Some of what we score as improvement is the
+        steered answer becoming difficult to distinguish from the baseline rather than becoming more
+        pluralistic, and our protocol cannot separate those two. This is the objection we would
+        raise first against our own result.
       </p>
       <p>
         <span class="lead">Position bias is uneven across judges.</span> Prometheus is
@@ -1003,24 +986,19 @@
         Mistral moves the same way on fifteen of the eighteen pairs.
       </p>
       <p>
-        <span class="lead">Low-push improvements are partly ties.</span> Where the delivered push
-        fell to around 4%, tie rates roughly doubled. Some of what we score as improvement is the
-        steered answer becoming difficult to distinguish from the baseline rather than becoming more
-        pluralistic, and our protocol cannot separate those two.
+        <span class="lead">Our judges are not independent.</span> Prometheus 2 is fine-tuned from
+        Mistral-7B, so both of our judges rest on the same pretraining. That the two agree is weaker
+        evidence than agreement between unrelated judges would be, and any cultural blind spot in
+        that base model is invisible to our protocol. We have no human validation to fall back on
+        either, so every claim about pluralism here rests on LLM judgement alone.
       </p>
-      <p>
-        <span class="lead">We have no human validation.</span> We exported a blinded sample for human
-        scoring but did not complete it, so every claim about pluralism here rests on LLM judgement
-        alone.
-      </p>
-      <p>
-        <span class="lead">One axis is narrower than its label.</span> Our religious group is 87%
-        Christian, so results we report for religion are closer to Christian-against-secular.
-      </p>
-      <p>
-        <span class="lead">Our evaluation is monolingual.</span> All generation and judging is in
-        English, while the cultural axes we study are not. <em>There is a need for culturally
-        situated multilingual evaluation of steering that we have not attempted here.</em>
+      <p class="more">
+        Three further constraints bound what these results cover rather than threatening them: our
+        religious group is 87% Christian, so religion here is closer to Christian-against-secular;
+        all generation and judging is in English while the cultural axes are not; and the study is
+        limited to inference-time steering on instruction-tuned models below 3B parameters.
+        <em>There is a need for culturally situated multilingual evaluation of steering that we have
+        not attempted here.</em>
       </p>
     </div>
   </div>
