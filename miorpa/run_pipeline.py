@@ -178,13 +178,26 @@ def stage_generate(run_cfg: cfg.RunConfig, eval_sets: dict, vector_bundles: dict
                     print(f"    {condition_key:28s} SKIPPED: vector contains non-finite values")
                     continue
 
-                # What actually reaches the model is alpha * |v|, and |v|
-                # differs by axis. Rescaling alpha here keeps that product
-                # constant so every axis is pushed by the same amount.
+                # What reaches the model is alpha * |v|, but what matters is
+                # that measured against |h|, the state it is added to. Holding
+                # the ratio constant is the only way one setting means the same
+                # thing on an axis whose vectors are long and one whose vectors
+                # are short, or on models whose representations differ in scale
+                # by more than twenty times.
                 vector_norm = float(np.linalg.norm(vector)) if vector is not None else 0.0
                 applied_alpha = alpha
                 if run_cfg.equalise_push and vector_norm > 0:
-                    applied_alpha = alpha * (cfg.PUSH_REFERENCE_NORM / vector_norm)
+                    hidden_norm = bundle["axes"][axis].get("hidden_norm")
+                    if not hidden_norm:
+                        raise RuntimeError(
+                            f"{name}/{axis}: this vector file predates hidden_norm, which "
+                            "equalise_push needs. Delete results/vectors and re-run "
+                            "stage_vectors to rebuild them."
+                        )
+                    # alpha scales the target so a sweep still works; at
+                    # DEFAULT_ALPHA the push is exactly PUSH_TARGET_RATIO.
+                    target = cfg.PUSH_TARGET_RATIO * hidden_norm * (alpha / cfg.DEFAULT_ALPHA)
+                    applied_alpha = target / vector_norm
 
                 try:
                     responses = steering.generate(
@@ -207,7 +220,11 @@ def stage_generate(run_cfg: cfg.RunConfig, eval_sets: dict, vector_bundles: dict
                 # its columns misaligned halfway down.
                 extra = {}
                 if run_cfg.equalise_push:
-                    extra = {"vector_norm": vector_norm, "applied_alpha": applied_alpha}
+                    extra = {"vector_norm": vector_norm, "applied_alpha": applied_alpha,
+                             "hidden_norm": bundle["axes"][axis].get("hidden_norm"),
+                             "push_ratio": (applied_alpha * vector_norm
+                                            / bundle["axes"][axis]["hidden_norm"]
+                                            if vector is not None else 0.0)}
 
                 _append_rows(path, [
                     {
@@ -227,7 +244,8 @@ def stage_generate(run_cfg: cfg.RunConfig, eval_sets: dict, vector_bundles: dict
 
                 push_note = ""
                 if run_cfg.equalise_push and vector is not None:
-                    push_note = f"  |v|={vector_norm:.1f} alpha->{applied_alpha:.3f}"
+                    ratio = applied_alpha * vector_norm / bundle["axes"][axis]["hidden_norm"]
+                    push_note = f"  |v|={vector_norm:.1f} alpha->{applied_alpha:.3f} push={ratio:.0%}"
                 print(f"    {condition_key:28s} {len(questions):>4} gens  "
                       f"{time.time()-started_at:>6.1f}s{push_note}")
         finally:
@@ -346,31 +364,52 @@ def ablation_layer_sweep(model_name: str):
     return combined
 
 
-def ablation_equalised_push(model_name: str):
+def ablation_equalised_push(model_name: str, judge_it: bool = True):
     """Shared alpha versus equal push, on the same model and questions.
 
-    The naive setup gives every axis the same alpha, which means every axis
-    gets a different actual push because the vectors have different lengths.
-    This runs that setup and the corrected one back to back, so the two are
-    directly comparable and the difference between them is the evidence that
-    the axis gap was a scaling artefact rather than a real difference.
+    The naive setup gives every axis the same alpha, so every axis gets a
+    different actual push because the vectors have different lengths. This runs
+    that setup and the corrected one back to back, which makes the difference
+    between them the evidence that the axis gap was a scaling artefact.
+
+    BERTScore alone cannot finish the argument. It says whether the answer is
+    still about the question, so it can only show that a collapsed axis stopped
+    collapsing. Whether the recovered answers are actually more pluralistic is
+    a judge question, so with judge_it the same two judges that scored the main
+    run score both conditions here.
     """
-    summaries = []
+    from . import judge
+
+    summaries, resolved = [], []
     for equalise in (False, True):
         label = "equal push" if equalise else "shared alpha"
         print(f"\n### {label}")
+        tag = f"push_{'equal' if equalise else 'shared'}_{cfg.MODELS_BY_NAME[model_name].slug}"
         run_cfg = cfg.RunConfig(
             models=[model_name],
             methods=("MoD",),
             alphas=(cfg.DEFAULT_ALPHA,),
-            questions_per_axis=60,
+            # Matches the main run. At 60 the tie rates left too few decided
+            # pairs for the win rates to mean anything.
+            questions_per_axis=cfg.EVAL_QUESTIONS_PER_AXIS,
             include_random_control=False,
             equalise_push=equalise,
-            tag=f"push_{'equal' if equalise else 'shared'}_{cfg.MODELS_BY_NAME[model_name].slug}",
+            tag=tag,
         )
-        _, summary = run_all(run_cfg)
+        scored, summary = run_all(run_cfg)
         summary["push_mode"] = label
         summaries.append(summary)
+
+        if not judge_it:
+            continue
+
+        pairs = judge.build_pairwise_set(scored, tag=tag)
+        for judge_key in judge.DEFAULT_JUDGES:
+            judged = judge.run_judge(pairs, judge_key, tag=tag)
+            verdicts = judge.resolve_pairwise(judged, tag=tag)
+            verdicts["push_mode"] = label
+            resolved.append(verdicts)
+            judge.unload_judge()
 
     combined = pd.concat(summaries, ignore_index=True)
     path = cfg.EVAL_DIR / f"push_comparison_{cfg.MODELS_BY_NAME[model_name].slug}.csv"
@@ -378,9 +417,28 @@ def ablation_equalised_push(model_name: str):
     print(f"saved {path.name}")
 
     steered = combined[combined["method"] == "MoD"]
-    print("\nshared alpha vs equal push, per axis")
+    print("\ncoherence: shared alpha vs equal push, per axis")
     print(steered.pivot_table(index="axis", columns="push_mode",
                               values=["bertscore", "perplexity"]).round(3).to_string())
+
+    if resolved:
+        verdicts = pd.concat(resolved, ignore_index=True)
+        path = cfg.EVAL_DIR / f"push_judged_{cfg.MODELS_BY_NAME[model_name].slug}.csv"
+        verdicts.to_csv(path, index=False, encoding="utf-8")
+        print(f"saved {path.name}")
+
+        print("\npluralism: steered win rate against baseline, per axis")
+        for judge_key, block in verdicts.groupby("judge"):
+            rates = block.groupby(["axis", "push_mode"])["verdict"].apply(
+                lambda v: round((v == "steered").sum()
+                                / max((v != "tie").sum(), 1), 3)
+            )
+            print(f"\n  {judge_key}")
+            print(rates.unstack().to_string())
+        print("\nAnything above 0.50 means the judge preferred the steered answer.")
+        print("Religion rising from near zero under equal push is the result")
+        print("this ablation exists to test.")
+
     return combined
 
 

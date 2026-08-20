@@ -173,20 +173,27 @@ ACTIVATION_POOLING = "mean"
 # flag changes how the four methods rank against each other.
 NORMALISE_TO_MOD_NORM = True
 
-# Equalising the push across axes.
+# Equalising the push across axes and models.
 #
 # alpha only multiplies the vector; it does not set the strength on its own.
-# Each axis's vector carries whatever length its own activations produced -
-# on Qwen2.5-1.5B that is |MoD| = 14 for origin, 40 for age, 85 for religion.
-# One shared alpha therefore pushes religion about six times harder than
-# origin, so comparing axes at "the same alpha" compares three different
-# interventions, not three axes.
+# Each axis's vector carries whatever length its own activations produced, so
+# one shared alpha pushes religion several times harder than origin and the
+# axes are never compared at the same strength.
 #
-# With RunConfig.equalise_push set, alpha is rescaled per axis so that
-# alpha * |v| equals alpha * PUSH_REFERENCE_NORM everywhere. The reference is
-# origin's norm because that is the axis that stayed coherent, so it is the
-# strength already known not to break the model.
-PUSH_REFERENCE_NORM = 14.0
+# The first attempt at fixing this equalised to an absolute norm, which was
+# still wrong: a push of 21 is 4.3% of SmolLM2-360M's hidden state but 82% of
+# Qwen2.5-0.5B's, whose representations are far smaller. The scale-free
+# quantity is |alpha * v| / |h|, so that is what gets held constant now.
+#
+# 0.25 comes from the measured data. Across six models the axes land in
+# non-overlapping bands of roughly 12% (origin), 25% (age) and 59% (religion),
+# and the successful conditions cluster in the middle band. Origin at 12% looks
+# under-pushed and religion at 59% is overwritten rather than nudged.
+#
+# With RunConfig.equalise_push set, alpha is rescaled per axis and per model so
+# every condition receives PUSH_TARGET_RATIO of its own hidden-state norm.
+# alpha still scales the target relative to DEFAULT_ALPHA, so a sweep works.
+PUSH_TARGET_RATIO = 0.25
 
 # Steer only the tokens being generated, never the prompt itself.
 STEER_PROMPT_TOKENS = False

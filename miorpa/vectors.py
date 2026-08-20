@@ -307,13 +307,24 @@ def build_vectors_for_model(spec, pairs_by_axis: dict, layer_fraction=None, save
             pair_count = vectors_by_method.pop("_n_pairs_used")
             vectors_by_method["Random"] = random_control(vectors_by_method["MoD"])
 
+            # Typical size of the state the vector gets added to. A vector norm
+            # on its own says nothing about how hard the model is being pushed:
+            # 128 is a nudge against a hidden state of 500 and an overwrite
+            # against one of 150. Recording it here lets the steering code hold
+            # the ratio constant instead of the absolute length, which is the
+            # only way one setting means the same thing across axes and models.
+            hidden_norm = float(np.median(np.linalg.norm(balanced_activations, axis=1)))
+
             result["axes"][axis] = {
                 "n_pairs": int(pair_count),
                 "coe_train_accuracy": coe_accuracy,
+                "hidden_norm": hidden_norm,
                 "vectors": {name: vector.tolist() for name, vector in vectors_by_method.items()},
                 "norms": {name: float(np.linalg.norm(vector)) for name, vector in vectors_by_method.items()},
             }
-            print(f"  {axis:9s} pairs={pair_count:,} |MoD|={np.linalg.norm(vectors_by_method['MoD']):.3f} "
+            mod_norm = float(np.linalg.norm(vectors_by_method["MoD"]))
+            print(f"  {axis:9s} pairs={pair_count:,} |MoD|={mod_norm:.3f} "
+                  f"|h|={hidden_norm:.1f} push@1.5={150 * mod_norm / hidden_norm:.0f}% "
                   f"coe_accuracy={coe_accuracy:.2f}")
     finally:
         free(model)

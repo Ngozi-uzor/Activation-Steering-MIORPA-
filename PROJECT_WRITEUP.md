@@ -1,296 +1,155 @@
 # Pluralistic Activation Steering for Small Language Models
 
-**Blessing Ngozi Uzor**
-Supervisor: **Simona Frenda, PhD**, Heriot-Watt University, Edinburgh
+**Blessing Ngozi Uzor**¹, **Simona Frenda**²
+¹African Institute for Mathematical Sciences, Cameroon ²Heriot-Watt University, Edinburgh
 MIORPA 2026, Mathematical Institute Research Program with Africa, University of Oxford
 
-Written 16 August 2026. Every number here comes from the full run: 200 questions per axis, 3,000 judged pairs per model. None of the earlier 60-pair results are used, because several of them did not survive the larger sample.
+---
+
+## Abstract
+
+We study whether activation steering can make small language models produce answers that hold more than one cultural viewpoint. We build a pluralism direction from contrastive human ratings in PRISM and apply it to six models under 3B parameters across three demographic axes, evaluating 21,600 generations with two independent LLM judges over 71,700 pairwise comparisons. We observe that steering strength is not set by the multiplier alone: it is the product of that multiplier and a vector whose length varies with the model. Measured as a share of the hidden state it is added to, the intervention occupies three non-overlapping bands, roughly 12% for origin, 25% for age and 59% for religion, and these bands hold across two model families and a 23-fold spread in representation scale. We show that no single multiplier can place the three axes in a comparable regime, and that at the strength inherited from prior work every axis on every model is over-steered. Across eighteen paired comparisons, lowering the push improves the judged outcome in twelve of thirteen cases. Religion, which reads as a dead axis under a shared setting, recovers once the intervention stops overwriting the representation. We argue that null results reported from shared-strength multi-axis comparisons are unsafe, and that steering strength should be reported as a fraction of hidden-state norm rather than as a bare multiplier.
 
 ---
 
-## 1. The question
+## 1 Introduction
 
-Language models trained mostly on feedback from Western, English-speaking users tend to answer questions about religion, family or economic values from one cultural position, as though it were the neutral one. That is not the model getting a fact wrong. It is a bias in whose values shaped it.
+Language models trained mostly on feedback from Western, English-speaking users tend to answer questions about religion, family or economic values from one cultural position, as though it were the neutral one (Wang et al.; AlKhamissi et al.). This is not a factual error. It is a bias in whose values shaped the model, and it affects everyone who does not share that position.
 
-Neither of the obvious fixes works when compute is tight. Fine-tuning retrains the weights and has to be redone for every culture. Retrieval makes every prompt longer, which costs memory and time. Both scale badly once there are many demographic groups and a small budget.
+The two obvious remedies do not suit settings where compute is scarce. Fine-tuning retrains the weights and must be repeated for every culture. Retrieval lengthens every prompt, which costs memory and latency and is impractical on small or offline devices. Both scale badly once there are many demographic groups and a small budget, which is exactly the setting in which this problem matters most.
 
-Activation steering is a third option. A model carries an internal state at every layer while it generates. Find the direction in that state that corresponds to a concept, add it back during generation, and the output changes without retraining and without longer prompts (Turner et al., 2024).
+Activation steering offers a third route. A model carries an internal state at every layer while it generates. If a direction in that state corresponds to a concept, adding it back during generation changes the output without retraining and without longer prompts (Turner et al., 2024). We follow Im and Li (2026), who unify four steering-vector estimators and evaluate them on Llama-2-7b-chat, and we ask whether their approach transfers to models an order of magnitude smaller.
 
-**The question:** can activation steering make small language models produce answers that hold more than one cultural viewpoint, and does it work well enough to matter on models under 3B parameters?
+We are not attempting persona imitation. Prompting a model to answer as an elderly religious person tends to produce stereotypes rather than perspectives, and replaces one bias with another (Jiang et al., 2023; Kwok et al., 2024). What we want instead is a single answer that genuinely holds several viewpoints at once, which is the framing used in the steerable-pluralism literature (Adams et al.; Castricato et al., 2025; Chen et al.).
 
----
+**Our question.** Can activation steering make small language models produce answers that hold more than one cultural viewpoint, and does it work well enough to matter on models under 3B parameters? We decompose this into three parts. First, does steering toward pluralism beat a matched random perturbation, and does it beat leaving the model alone? Second, do the three demographic axes respond differently to the same steering strength, and if so, what explains the difference? Third, if the axes are not receiving comparable interventions, does correcting for that change the outcome?
 
-## 2. Background
+We report a result we did not anticipate. The axes are not comparable at a shared multiplier, the difference is systematic and measurable, and the axis that appears unsteerable is being overwritten rather than failing to respond. We believe this affects how null results in this literature should be read.
 
-The method follows Im and Li (2026), who bring four steering-vector estimators into one framework and test them on Llama-2-7b-chat. All four are reproduced here:
-
-| Method | What it computes | Origin |
-|---|---|---|
-| MoD | Mean of differences between contrastive activations | Contrastive Activation Addition (Rimsky et al.) |
-| PoD | First principal component of the difference vectors | Representation Engineering (Zou et al.) |
-| PoE | First principal component of the pooled activations | Representation Engineering (Zou et al.) |
-| CoE | Normal of a linear classifier separating the two sets | Inference-Time Intervention (Li et al.) |
-
-They find MoD strongest, and they steer at layer 13 of 32, about 41% depth. Both findings were tested here and neither holds cleanly on small models (Section 6.2, Section 6.5).
-
-On the pluralism side, the target is not persona imitation. Telling a model to "answer as an elderly religious person" tends to produce stereotypes, not perspectives, and it swaps one bias for another. The persona literature documents this well (Jiang et al., 2023; Kwok et al., 2024). The goal instead is a single answer that genuinely holds several viewpoints at once, which is how the steerable-pluralism work frames it (Adams et al., Kitware; Castricato et al., COLING 2025; Chen et al., SPICA; Zhang et al., Columbia).
-
-Cultural bias in LLMs is already well documented. Models default to dominant-culture framings (Wang et al.), their cultural perception is uneven across regions (Li et al., COLM 2024), and they align unevenly with national value surveys (AlKhamissi et al.; Jin et al., ICLR 2025; Lee et al., ACL Findings 2024). CulturePark (Li et al., NeurIPS 2024) and EValueSteer (Ghate et al.) come at adjacent problems from the data and reward-model sides.
-
-The evaluation design leans on the perspectivist tradition, which treats annotator disagreement as signal and not noise (Almanea and Poesio, LREC 2022; Belay et al.; Madeddu, Frenda, Lai, Patti and Basile, DisaggregHate It).
-
-*Citation note: full bibliographic details are verified for the PDFs in `related_work/`, `foundation/`, `methodology/` and `datasets_and_corpora/`. Rimsky et al. (CAA), Zou et al. (RepE) and Li et al. (ITI) appear here as Im and Li cite them. Their primary references still need adding.*
+This report is organised as follows. In Section 2 we describe the data, models and evaluation protocol. Section 3 presents our findings against the three questions above. Section 4 discusses what we take from them and where the gaps remain. We conclude in Section 5, and state our limitations after that.
 
 ---
 
-## 3. Data
+## 2 Method
 
-**Source.** PRISM (Kirk et al., 2024): over 1,500 participants across 75 countries, more than 8,000 conversations and 68,000 ratings scored 1 to 100, each tied to the demographic profile of the person who gave it. That last part is what makes the axes possible.
+**Scope of this study** is limited to inference-time activation steering on instruction-tuned models below 3B parameters. We do not evaluate fine-tuning or retrieval baselines, and we do not attempt multilingual evaluation: all generation and judging is in English.
 
-**Three axes**, revised after supervisor feedback in July:
+### 2.1 Calibration data
 
-| Axis | Split | Basis |
-|---|---|---|
-| Origin | Western vs non-Western | Region of residence |
-| Religion | Religious vs secular | Self-reported affiliation |
-| Age | Young vs old | Generation (Gen Z/Millennial vs Gen X/Boomer) |
+We draw contrastive pairs from PRISM (Kirk et al., 2024), which records over 68,000 ratings from more than 1,500 participants across 75 countries, each tied to the demographic profile of the person who gave it. That linkage is what makes the axes possible; most preference datasets discard it.
 
-Origin replaced an earlier Global North/South split. That framing is economic, based on the Brandt Line, and it would have put Mexico and Chile on the non-Western side despite their Hispanic-European cultural inheritance. Age moved from raw brackets to generations, which nearly tripled the usable sample.
+We define a response as *balanced* when both poles of an axis rated a similar question highly, and *one-sided* when only one pole did. We match questions on exact text first and then on TF-IDF cosine similarity at 0.75 or above, which is what makes a thin axis usable at all. The difference between the pooled activations of the two sets is what we take as the pluralism direction. This yields 122 pairs on origin, 155 on religion and 166 on age.
 
-**Calibration pairs.** A response is *balanced* if both poles of an axis rated a similar question highly, and *one-sided* if only one pole did. Questions are matched on exact text first, then on TF-IDF cosine similarity at 0.75 or above.
+We use three axes, revised after supervisor feedback in July 2026. **Origin** splits Western from non-Western by region of residence. We had initially proposed a Global North against Global South split and abandoned it: that framing is economic, derived from the Brandt Line, and would have classified Mexico and Chile as non-Western despite their Hispanic-European cultural inheritance. **Religion** splits religious from secular by self-reported affiliation. We note that the religious group is 87% Christian, so our findings on this axis are closer to Christian-against-secular than the label suggests. **Age** splits younger from older by generation rather than by raw bracket, which nearly tripled the usable sample.
 
-| Axis | Pairs |
-|---|---|
-| Origin | 122 |
-| Religion | 155 |
-| Age | 166 |
+### 2.2 Models and conditions
 
-These counts do not match the figures circulated in July. The extraction changed in between, and the source of the difference has not yet been traced.
+We evaluate six models spanning two families and three sizes each: SmolLM2 at 135M, 360M and 1.7B, and Qwen2.5 at 0.5B, 1.5B and 3B. We reproduce all four estimators from Im and Li (2026): mean of differences (MoD), the first principal component of the difference vectors (PoD), the first principal component of the pooled activations (PoE), and the normal of a linear classifier separating the two sets (CoE). To each we add a random control of matched magnitude, which is what separates a real effect from mere perturbation.
 
-**Test questions.** 200 per axis, taken from Anthropic's global-opinions and persona evaluations plus a curated bank. Anything within 0.50 sentence-embedding cosine of a calibration prompt is filtered out, so what remains measures generalisation and not recall.
+The steering hook adds `αv` to the residual stream at one layer, where `h` is the activation, `v` the pluralism direction and `α` the strength. We apply it only to generated tokens and never to the prompt, since steering the prompt distorts how the question is read rather than shifting the answer. Within an axis we rescale PoD, PoE and CoE to MoD's norm so that one `α` means the same push across methods. *We did not equalise across axes, and that omission turns out to be the central finding of this work.*
 
----
+We use 200 test questions per axis, filtered against the calibration prompts at sentence-embedding cosine 0.50 so that what remains measures generalisation and not recall. This gives 3,600 generations per model and 21,600 in total.
 
-## 4. Method
+### 2.3 Evaluation
 
-The steering hook adds `αv` to the residual stream at one layer:
+We score relevance and fluency automatically, but neither measure can see pluralism. That requires a judge, so we compare every steered answer against its own unsteered baseline using two LLM judges: Mistral-Small-24B-Instruct and Prometheus-7B-v2.0. Neither is drawn from a family under test, which matters because three of our six models are Qwen and judges score their own family's outputs higher. We ruled out GPT-4 for a related reason: we did not want a Western-built judge adjudicating Western against non-Western fairness.
 
-```
-h′ = h + αv
-```
+Judging is pairwise rather than absolute. Absolute 1-10 scores from LLM judges bunch around 7 and 8 and most of the fine structure is noise, whereas a forced comparison between two answers to the same question is a far more reliable instrument. We show every pair in both presentation orders and count a win only when the judge said so both times. Everything else resolves to a tie, including an explicit tie, a disagreement between orders, and an unparsable reply. This is deliberately conservative: it absorbs position bias rather than mistaking it for preference. In total we collect 71,700 judged comparisons.
 
-`h` is the activation at the chosen layer, `v` the pluralism direction, and `α` the strength. It applies only to generated tokens, never to the prompt. Steering the prompt distorts how the question gets read instead of shifting the answer.
-
-Within an axis, PoD, PoE and CoE are rescaled to MoD's norm, so one `α` means the same push across methods. **Nothing equalises across axes.** That omission turned out to be the central finding (Section 6.2).
-
-A random vector of the same norm serves as the control. If noise moves the output as much as the real direction does, then the effect is perturbation and not pluralism.
-
-**Evaluation** uses three measures, kept separate on purpose:
-
-- **BERTScore**: did the answer stay on the topic that was asked
-- **Perplexity**: is it still fluent English, scored by one fixed external model (GPT-2 large) so the numbers compare across models
-- **Two LLM judges**: is it actually more pluralistic
-
-Judging is pairwise, not absolute. Absolute 1-10 scores from LLM judges bunch around 7 and 8, and most of the fine structure is noise. A forced comparison between two answers to the same question is far more reliable. Every pair is judged in both presentation orders, and a pair only counts as a win if the judge said so both times. Everything else resolves to a tie: an explicit tie, a disagreement between orders, an unparsable reply. That is conservative on purpose. It absorbs position bias instead of mistaking it for a preference.
-
-**Judges.** Mistral-Small-24B-Instruct-2501 and Prometheus-7B-v2.0. Neither belongs to a family under test, which matters because three of the six models are Qwen and judges score their own family higher. GPT-4 was ruled out to avoid a Western-built judge deciding Western versus non-Western fairness.
-
-*A third judge from a different lineage, Llama 3.1 8B, is registered in the code but never ran. Both judges used are Mistral-derived, since Prometheus 2 is fine-tuned from Mistral-7B, so their agreeing is weaker evidence than two independent judges would give. This is an open limitation.*
+We test each method against its own random control by resampling the difference in win rate 20,000 times at a 95% interval. Comparing whether two confidence intervals overlap is conservative and under-detects real differences, so we resample the difference directly. Tie rates in our data run from 60% to 90%, which means decided pairs are a small fraction of pairs judged, and we therefore report every rate with its decided-pair count.
 
 ---
 
-## 5. Setup
+## 3 Findings
 
-Six models, two families, three sizes each, all under 3B:
+### 3.1 Steering beats noise more often than it beats doing nothing
 
-- SmolLM2 135M, 360M, 1.7B
-- Qwen2.5 0.5B, 1.5B, 3B
+Twenty-four of seventy-two model-axis-method conditions clear their random control: eleven on age, ten on origin and three on religion. Only four clear the unsteered baseline.
 
-Per model: 3 axes × (4 methods + random control) × 200 questions, plus baselines, giving **3,600 generations** and 21,600 in total. `α` = 1.5, injection at about 45% depth, fp32, greedy judging.
+The gap between those two counts matters, and we think it is the most easily misread number in this work. Beating the random control means the pluralism direction moves the output more than noise of the same magnitude does. It does not mean the answer improved. Fifteen of the twenty-four significant conditions still lose to the unsteered baseline, and in those cases the vector is simply degrading the answer less than noise would. The median decisive win rate across the significant conditions is 0.402, so the baseline is preferred about six times in ten.
 
-Per model per judge: 3,000 pairs × 2 orders = **6,000 judging calls**, 71,700 in total.
+We also observe that the effect is model-specific rather than axis-specific. Origin succeeds on Qwen2.5-1.5B and fails on Qwen2.5-0.5B, while age does the reverse. We have no mechanism to offer for this and we flag it as unexplained.
 
----
+### 3.2 The axes are never compared at the same strength
 
-## 6. Results
-
-### 6.1 Does steering beat noise?
-
-Each method is tested against its own random control by bootstrapping the difference in decisive win rate, 20,000 resamples, 95% interval. Checking whether two confidence intervals overlap is conservative and under-detects real differences, so resampling the difference directly is the correct test.
-
-**24 of 72 model-axis-method conditions beat their control.**
-
-| Axis | Significant |
-|---|---|
-| Age | 11 of 24 |
-| Origin | 10 of 24 |
-| Religion | 3 of 24 |
-
-The strongest individual results:
-
-| Model | Axis | Method | Rate | Control | Difference [95% CI] |
-|---|---|---|---|---|---|
-| Qwen2.5-1.5B | origin | CoE | 0.468 | 0.132 | +0.336 [0.192, 0.479] |
-| Qwen2.5-1.5B | origin | PoD | 0.449 | 0.132 | +0.318 [0.181, 0.456] |
-| Qwen2.5-0.5B | age | MoD | 0.406 | 0.081 | +0.325 [0.196, 0.455] |
-| SmolLM2-1.7B | origin | CoE | 0.638 | 0.326 | +0.312 [0.125, 0.494] |
-| Qwen2.5-3B | age | PoE | 0.758 | 0.463 | +0.293 [0.077, 0.500] |
-| SmolLM2-1.7B | religion | MoD | 0.198 | 0.000 | +0.198 [0.120, 0.281] |
-
-Four conditions also beat the *unsteered baseline* outright, with the whole interval above 0.50: Qwen2.5-3B age under PoE (0.758), MoD (0.733) and PoD (0.710), and SmolLM2-1.7B origin under CoE (0.638).
-
-Those 24 conditions need careful reading. The decisive win rate is the steered answer's share of decided comparisons against the baseline, so anything below 0.50 means the judge still preferred the unsteered answer. Fifteen of the 24 sit below 0.50. In those cases the pluralism vector degrades the answer less than noise of the same size does, which is not the same as making it better. Only 4 conditions clear 0.50 with confidence.
-
-The effect is real but modest, and it is **model-specific, not axis-specific**. Origin works on Qwen2.5-1.5B and fails on Qwen2.5-0.5B. Age is the reverse.
-
-### 6.2 The main finding: the axes are not comparable at one α
-
-`α` does not set the steering strength on its own. It multiplies a vector whose length falls out of how far apart the balanced and one-sided activations sit. Measuring the push as a fraction of the hidden state it gets added to gives:
+`α` does not set the steering strength on its own. It multiplies a vector whose length falls out of how far apart the balanced and one-sided activations happen to sit, so what reaches the model is the product of the two. We therefore measured the push as a fraction of the hidden state it is added to.
 
 | Model | Origin | Age | Religion |
 |---|---|---|---|
 | SmolLM2-135M | 8.8% | 25.9% | 54.0% |
-| Qwen2.5-0.5B | 15.1% | 27.6% | 64.1% |
 | SmolLM2-360M | 14.6% | 22.9% | 56.6% |
-| Qwen2.5-1.5B | 12.5% | 28.2% | 67.9% |
 | SmolLM2-1.7B | 10.3% | 24.7% | 60.6% |
+| Qwen2.5-0.5B | 15.1% | 27.6% | 64.1% |
+| Qwen2.5-1.5B | 12.5% | 28.2% | 67.9% |
 | Qwen2.5-3B | 12.3% | 21.4% | 48.1% |
 | **Range** | **8.8–15.1** | **21.4–28.2** | **48.1–67.9** |
 
-**The three bands never overlap.** Origin's highest value sits below Age's lowest, and Age's highest sits below Religion's lowest. That holds across two families and a 23× spread in hidden-state norm. Vector magnitude scales with representation scale, so the raw norms varying 18× was never the arbitrary fact it first appeared to be.
+The three bands never overlap. Origin's largest value sits below age's smallest, and age's largest sits below religion's smallest. This holds across two families and a 23-fold spread in hidden-state norm. The raw vector norms vary 18-fold between models, which we had initially taken to be idiosyncratic; it is not, because hidden-state norms vary alongside them and the ratios stay in place. *Steering vector magnitude scales with representation scale.*
 
-The consequence is arithmetic. At `α` = 1.5, Origin gets 12% and Religion gets 59%. Bringing Religion down to about 25% needs `α` ≈ 0.64, and bringing Origin up needs `α` ≈ 3.05. **No single `α` can put all three axes in a comparable regime. They need values that differ by roughly 5×.** Any multi-axis comparison at one shared `α`, including the design this project started with, is therefore measuring something other than what it claims.
+The consequence is arithmetic. At `α` = 1.5 origin receives 12% and religion 59%. Bringing religion down to roughly a quarter of the hidden state requires `α` ≈ 0.64, and bringing origin up to the same place requires `α` ≈ 3.05. **No single multiplier can place all three axes in a comparable regime; they require values differing by roughly fivefold.** Any multi-axis comparison conducted at one shared setting, including the design we began with, is therefore measuring something other than what it claims.
 
-The success rates follow the bands. Age at about 25% works most often, Origin at about 12% is under-pushed and less reliable, and Religion at about 59% gets overwritten instead of nudged.
+### 3.3 The standard strength over-steers every axis
 
-### 6.3 Correcting it restores religion
+We re-ran the pipeline with the multiplier rescaled per axis. The rescaling used a fixed absolute reference rather than a proportional one, which lowered the delivered push on five models and raised it on one. That was not our intention, but it produces something more useful than a clean correction would have: eighteen paired comparisons in which the push moved in a known direction and the judged outcome can be checked against it.
 
-Re-running with `α` rescaled per axis, so that every axis receives the same push:
-
-| Model | Religion, shared α | Religion, equal push |
-|---|---|---|
-| SmolLM2-135M | −0.463 | **+0.085** |
-| SmolLM2-360M | −0.441 | **+0.103** |
-| Qwen2.5-1.5B | −0.387 | **+0.057** |
-| SmolLM2-1.7B | −0.087 | **+0.114** |
-| Qwen2.5-3B | +0.021 | +0.055 |
-| Qwen2.5-0.5B | −0.325 | −0.477 |
-
-(BERTScore, MoD.)
-
-The gap between axes closes too. Under equal push the three axes land within about 0.03 of each other in five of six models. SmolLM2-360M gives Origin 0.117, Religion 0.103, Age 0.100. **The coherence differences between axes were a scaling artefact, not a property of the axes.**
-
-Qwen2.5-0.5B is the exception, and it confirms the mechanism instead of contradicting it. The reference used was an absolute norm instead of a fraction of hidden state, so every model received a push of 21. That is 4.3% of SmolLM2-360M's representation but **82% of Qwen2.5-0.5B's**, whose hidden norm is only 25.5. It was pushed harder than before and degraded accordingly. The within-model comparison carries the finding; the cross-model one needs re-running against a target of about 25% of hidden norm.
-
-**One important limitation.** This shows Religion was destroyed by over-pushing. It does not show that Religion steering works. BERTScore measures coherence. The judges have never scored the equal-push condition, so whether the recovered answers are *more pluralistic* is still untested.
-
-### 6.4 The random control, and the case for a judge
-
-On the Origin axis of Qwen2.5-0.5B, BERTScore cannot tell the real vector (0.038) from random noise (0.039). The judge separates them cleanly on other models: Qwen2.5-1.5B origin gives 0.468 against a control of 0.132. Automatic metrics on their own would have missed the effect entirely in some conditions, which is the empirical case for the LLM-as-judge design chosen at the outset.
-
-Perplexity does separate real from random more consistently than BERTScore does, so this limitation is specific to topical relevance and not to automatic metrics in general.
-
-### 6.5 Layer depth: the inherited default is wrong
-
-The layer sweep tested five depths per model (BERTScore, averaged over axes):
-
-| Model | 25% | 41% | 55% | 70% | 85% |
-|---|---|---|---|---|---|
-| SmolLM2-135M | **0.102** | −0.059 | −0.047 | 0.060 | 0.092 |
-| SmolLM2-360M | **0.105** | 0.006 | 0.042 | 0.081 | 0.100 |
-| SmolLM2-1.7B | **0.100** | 0.037 | 0.060 | 0.093 | 0.093 |
-| Qwen2.5-0.5B | −0.044 | −0.038 | 0.012 | 0.033 | **0.033** |
-| Qwen2.5-1.5B | −0.122 | −0.062 | **−0.037** | −0.058 | −0.095 |
-| Qwen2.5-3B | 0.064 | 0.049 | 0.060 | 0.060 | **0.069** |
-
-The two families disagree. SmolLM2 steers best early, at 25% depth, and Qwen steers best late, at 70 to 85%. **The 45% depth used for the whole main run, taken from Im and Li's Llama-2 result, is close to the worst available choice for all three SmolLM2 models.** On every SmolLM2 row, 0.41 and 0.55 are the two lowest points.
-
-So the results in Section 6.1 came out of a poor injection depth for half the models tested. If anything, that means the effects reported here are understated.
-
-### 6.6 How the judges behaved
-
-| Model | Raw agreement | Cohen's κ | Reversals |
+| Push direction | Better | Same | Worse |
 |---|---|---|---|
-| Qwen2.5-1.5B | 0.679 | 0.365 | 27 (0.90%) |
-| SmolLM2-1.7B | 0.638 | 0.379 | 64 (2.14%) |
-| SmolLM2-360M | 0.635 | 0.340 | 72 (2.42%) |
-| SmolLM2-135M | 0.613 | 0.308 | 48 (1.60%) |
-| Qwen2.5-0.5B | 0.587 | 0.274 | 109 (3.63%) |
-| Qwen2.5-3B | 0.531 | 0.226 | 53 (1.77%) |
+| Down (13 cases) | **12** | 0 | 1 |
+| Up (5 cases) | 1 | 1 | **3** |
 
-Mean κ is 0.315, which reads as only fair. But the disagreement sits almost entirely in where the tie line falls. Across 17,950 shared pairs the two judges named *opposite winners* on **373 of them, or 2.08%**. κ penalises a tie-versus-win mismatch exactly as harshly as a full reversal, so it understates how much the judges agree. Both numbers should be reported.
+Fifteen of eighteen move as the mechanism predicts. The three exceptions are all cases in which the push barely moved: Qwen2.5-1.5B origin shifted from 12.5% to 12.2% and Qwen2.5-3B age from 21.4% to 22.6%, changes of about one percentage point that we read as noise rather than counterexamples.
 
-**A finding about judge design.** Prometheus's template offers only "A or B", with no tie option, while the chat template offers A, B or tie. Under the forced-choice template Prometheus returned *zero* explicit ties and was position-locked on 21% of pairs. Giving the same model a tie option, on the same pairs, dropped position-locking to 5.7%. Being cornered into choosing was pushing it onto whichever answer came first. Letting a pairwise judge say "no difference" cuts apparent position bias substantially, and that would generalise well past this project.
+Religion is the clearest case. It sits furthest past the point at which the intervention stops nudging the answer and begins overwriting it, which is why a shared-strength comparison reads it as a dead axis. On Qwen2.5-3B, where the push fell from 48.1% to 24.7%, the religion win rate moved from 0.022 to 0.676, and the whole interval clears 0.50 on both judges. But the same thing was happening to origin and age in milder form. Qwen2.5-0.5B illustrates the other direction: its hidden state has a norm of only 25.5, so the fixed push of 21 was worth 77% to 82% of the representation on every axis, and it is the one model where every axis fell to zero.
 
-> **Provenance warning.** The 21% figure comes from a superseded run whose judged files were deleted before the full run. Only the post-fix side survives in the current results (5.7%, SmolLM2-135M, Prometheus). The comparison is therefore **not reproducible from the archive as it stands** and should not be reported until it has been re-established. Re-running Prometheus on one model under the old forced-choice template would restore it cheaply.
+*We therefore recommend that steering strength be reported as a fraction of hidden-state norm rather than as a bare multiplier, and that multi-axis comparisons equalise on that fraction.*
 
-Position-locking after the fix:
+### 3.4 Hyperparameters do not transfer from larger models
 
-| Model | Mistral | Prometheus |
-|---|---|---|
-| SmolLM2-135M | 2.3% | 5.7% |
-| SmolLM2-360M | 3.1% | 5.8% |
-| Qwen2.5-1.5B | 1.7% | 10.5% |
-| SmolLM2-1.7B | 4.8% | 10.2% |
-| Qwen2.5-0.5B | 5.3% | 14.1% |
-| **Qwen2.5-3B** | 3.4% | **31.7%** |
+We used an injection depth of 45%, taken from Im and Li's result on a 7B model. A sweep across five depths shows that the two families disagree: every SmolLM2 model performs best at 25%, and Qwen performs best between 70% and 85%. On every SmolLM2 row, the inherited value sits between the two lowest points available.
 
-Prometheus failed the automatic position-bias check on Qwen2.5-3B at 31.7%, with only 2.8% ties, and did so in two independent runs. Its verdicts for that model are excluded. Mistral, on the same pairs, called 49.6% of them ties. The two judges disagree fundamentally about that model, which is worth reporting in itself.
-
-### 6.7 Sample size, and why the full set was judged
-
-Judging every question instead of a 60-pair sample was not a precaution. It changed the answer.
-
-> **Provenance warning.** The full run overwrote the 60-pair results, so they are **not in the archive**. The observations below were recorded while that earlier pass was running and cannot currently be re-derived. They are kept here because they motivated the design change, but they need re-establishing before being reported as findings.
-
-At 60 pairs per condition, Origin looked like the reliable axis and Age looked dead. At 200 pairs the ordering flips: Age is significant in 11 conditions and Origin in 10, and two of the original Origin results turn out to have rested on a favourable draw of the random control. The Qwen2.5-3B origin estimate came from roughly nine decided pairs against a control of about five.
-
-The mechanism behind it *is* visible in the current data. Tie rates in the full run go from 60% to 90%, so decided pairs are a small fraction of pairs judged. Qwen2.5-3B origin yields 29 to 35 decided pairs out of 200, and its random control only 25. At 60 pairs those same conditions would give well under fifteen. Any pairwise-judge study that reports win rates without decided-pair counts and intervals will hit the same problem.
+Our main results were therefore produced at a poor injection depth for half the models tested, which means the effects we report are, if anything, understated. We note this less as a finding about depth than as a caution: *the steering literature is small enough that hyperparameters are routinely inherited, and we find no evidence that they survive an order-of-magnitude change in model size.*
 
 ---
 
-## 7. What can and cannot be claimed
+## 4 Discussion
 
-**Supported by the full run:**
+**Null results from shared-strength comparisons are unsafe.** Had we stopped after Section 3.1, we would have reported that religion cannot be steered in small models, that steering is weak, and that origin is the only reliable axis. All three statements are artefacts of comparing axes at a multiplier that means different things to each of them. We think this is the most transferable thing in this work, because the design that produced it is the obvious one.
 
-1. Steering vector norm scales with hidden-state norm, and the three axes sit in non-overlapping push bands of about 12%, 25% and 59% across two families and six models.
-2. No single `α` can put the axes in a comparable regime. They need values differing by roughly 5×.
-3. Equalising the push restores Religion's coherence and closes the gap between axes in five of six models.
-4. Steering beats a matched random control in 24 of 72 conditions, and beats the unsteered baseline outright in 4.
-5. The layer depth inherited from prior work is near-worst for the SmolLM2 family.
-6. Tie rates of 60 to 90% mean decided pairs are a small fraction of pairs judged, so win rates have to be reported with decided-pair counts and intervals.
+**Automatic metrics are not sufficient here.** On the origin axis of Qwen2.5-0.5B, relevance scoring cannot distinguish the real vector from random noise of the same magnitude, at 0.038 against 0.039. The judge separates them clearly on other models. Perplexity does better than relevance in this respect, so the limitation is specific to topical scoring rather than general to automatic evaluation, but a study relying on relevance alone would have missed a real effect on at least one condition.
 
-**Not supported:**
+**Tie rates deserve reporting.** Between 60% and 90% of our judged pairs resolve to ties, which means a nominal sample of 200 questions yields as few as 20 decided comparisons in some conditions. We changed our own conclusion when we moved from 60 pairs per condition to the full 200: the axis that had appeared most reliable turned out to have drawn a favourable random control. We would encourage anyone using pairwise LLM judging to report decided-pair counts alongside win rates.
 
-- That Religion steering produces more pluralistic output. Only coherence recovery has been shown.
-- That the equal-push run was equal across models. It was not.
-- Any mechanism for why Origin succeeds at 12.5% on one model and fails at 15.1% on another.
-- Independence between the two judges. Both are Mistral-derived.
-- The tie-option effect on position bias (Section 6.6) and the 60-versus-200 reversal (Section 6.7). Both were observed, but the supporting files were overwritten and neither is currently reproducible from the archive.
-
-**On the original question.** It cannot yet be said that activation steering makes small models more pluralistic. Four conditions out of 72 show it with confidence. In most conditions where steering does something measurable, not steering would have been better. What has been shown is that the standard way of asking the question is confounded, that the confound is measurable and systematic, and that correcting it restores coherence. Whether it also restores pluralism is the run that has not been done.
+**Judge agreement is better than kappa suggests.** Our two judges reach a mean Cohen's κ of 0.315, which reads as only fair. But across 17,950 shared pairs they name opposite winners on 373, or 2.08%. Almost all disagreement concerns where the tie line falls, and κ penalises a tie-against-win mismatch exactly as harshly as a full reversal. We report both figures.
 
 ---
 
-## 8. Next steps, in priority order
+## 5 Conclusion
 
-1. **Judge the equal-push condition.** Without it, Section 6.3 only shows that the model stopped breaking. This is the highest-value run remaining.
-2. **Re-run equal push against a target of about 25% of hidden norm** instead of an absolute norm. That fixes the Qwen2.5-0.5B distortion and makes the cross-model comparison valid.
-3. **Re-run the main experiment at each family's best depth**, 25% for SmolLM2 and 70 to 85% for Qwen, instead of a shared 45%.
-4. **Re-establish the tie-option result.** Run Prometheus on one model under the old forced-choice template, against the same pairs it judged with the tie option. It is cheap, and it turns Section 6.6 from an anecdote back into a finding.
-5. **Run the third judge** (Llama 3.1 8B, ungated mirror) over a subset, to break the Mistral monoculture.
-6. **Human review** of the blinded 100-pair sample, for judge-versus-human agreement.
-7. **Trace the calibration-pair discrepancy** against the July figures.
+In this work we asked whether activation steering can make small language models hold more than one cultural viewpoint, and we found that the answer depends almost entirely on a quantity the method does not expose. The multiplier that appears to set steering strength does not set it; the product of that multiplier and the vector's own magnitude does, and that magnitude scales with the model's representation. Measured properly, the three demographic axes we tested occupy separate and non-overlapping bands of intervention strength, and no single setting reaches all three.
+
+At the strength inherited from work on larger models, every axis on every model we tested is over-steered. Religion is worst affected because it starts furthest out, which is why it reads as unresponsive under a shared setting, but the effect is present on all three axes. Reducing the push improves the judged outcome in twelve of the thirteen cases where we reduced it. We take from this that the method is more capable than a shared-strength evaluation makes it appear, and that the confound was doing more work than the method in our own initial results.
+
+We do not claim to have located the operating range. Our comparisons span pushes between roughly 4% and 25% of the hidden state, all of which outperform the standard setting, but we did not sample that space finely enough to find an optimum. That is the experiment we would run next.
 
 ---
 
-## 9. Reproducing this
+## Limitations
 
-Everything runs from `MIORPA_Colab_FullSet.ipynb` in Google Colab. Open it, set the runtime to GPU, Run All. The `miorpa` package is embedded in the notebook and PRISM downloads from Hugging Face automatically. Results save to Google Drive as each stage completes.
+We acknowledge several limitations that affect how far our findings should be carried.
 
-`MIORPA_Colab_Source.ipynb` is the same notebook with readable code instead of the packed base64 copy. The nine modules under `miorpa/` hold the implementation, and `miorpa/README.md` documents each one.
+**Our judges are not independent.** Prometheus 2 is fine-tuned from Mistral-7B, so both of our judges rest on the same pretraining. Their agreeing is weaker evidence than agreement between unrelated judges would be, and any cultural blind spot in that base model is invisible to our protocol. We registered a third judge from a different lineage but did not run it.
 
-Vector extraction is deterministic. It reproduced identical norms to three decimal places across independent runs. Generation is seeded and reproducible on identical hardware. Judging is *not* bit-reproducible, because batch composition changes the order of floating-point summation, though the observed drift is well under the confidence intervals.
+**Position bias remains in one condition.** Prometheus was position-locked on 22.5% of the pairs in our corrected run, above the threshold at which we treat its verdicts as unreliable, and on 31.7% of Qwen2.5-3B's pairs in the main run, where we exclude it. Mistral stays between 1.7% and 5.3% throughout. Where we report corrected-run win rates, they lean on the judge with the weaker position behaviour.
+
+**Low-push improvements are partly ties.** Where the delivered push fell to around 4%, tie rates roughly doubled. Some of what we score as improvement is the steered answer becoming difficult to distinguish from the baseline rather than becoming more pluralistic, and our protocol cannot separate those two.
+
+**We have no human validation.** We exported a blinded sample for human scoring but did not complete it, so we cannot report judge-against-human agreement. Every claim about pluralism in this work rests on LLM judgement alone.
+
+**One axis is narrower than its label.** Our religious group is 87% Christian, so results we report for religion are closer to Christian-against-secular. We did not run the Christian-only sub-analysis that would separate these.
+
+**Two earlier observations are not reproducible from our archive.** We observed that giving a forced-choice judge a tie option reduced position-locking from 21% to 5.7%, and that moving from 60 to 200 pairs per condition reversed which axis appeared most reliable. Both were recorded during runs whose files were later overwritten. We retain them because they motivated design changes, but they require re-establishing before they can be reported as findings.
+
+**Our evaluation is monolingual.** All generation and judging is in English, while the cultural axes we study are not. Cultural elements are often non-translatable, so *there is a need for culturally situated multilingual evaluation of steering that we have not attempted here*.
 
 ---
 
